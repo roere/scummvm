@@ -570,6 +570,44 @@ protected:
 	bool _needsSoundUnpause = false;
 
 public:
+#ifdef __EMSCRIPTEN__
+	bool appbaseGerman() const;
+    virtual int appbaseManual(int operation) { return 0; }
+    virtual int appbaseManualOwner(int owner) { return 0; }
+    bool appbaseCoopManualGive(int recipient);
+    virtual int appbaseManualRandom(int maximum,int value) { return value; }
+	Common::String appbaseTextKey() const;
+	const byte *appbaseText(const byte *source, const Common::String &key, int kind);
+	void appbaseTalk(const byte *source, const Common::String &key);
+	void appbaseTextCount();
+	bool appbaseTextCanSave() const;
+	void appbaseTextReset();
+	void appbaseTextTick();
+	void appbaseTextLoaded();
+	void appbaseTextPresented();
+	int appbaseVerbGeometry(int verb, const byte *source, int field);
+	bool appbaseCoopActive() const;
+    int appbaseCoopRandom(int maximum,int value);
+	int appbaseCoopActor() const;
+	void appbaseCoopSound(int sound, int operation);
+    bool appbaseCoopSceneBegin();
+    void appbaseCoopSceneEnd();
+    bool appbaseCoopSceneRunning() const;
+    int appbaseCoopSceneCommand(int operation,int script,int offset,int actor);
+	int appbaseCoopSelect(int actor);
+	bool appbaseCoopVerb(int verb) const;
+	int appbaseCoopPrepare(int operation);
+	void appbaseCoopSeed(uint32 seed);
+	bool appbaseCoopPickup(int obj);
+	void appbaseCoopState(int obj,int state);
+	void appbaseCoopTape(int var,int value);
+	bool appbaseCoopWalk(int actor,int room,int x,int y,int dir);
+	bool appbaseCoopTransfer(int object,int owner);
+	int appbaseCoopLight(int flags);
+	bool appbaseCoopTick();
+	int appbaseCoopGet(int kind,int id,int field);
+	const char *appbaseCoopName(int id);
+#endif
 	// Constructor / Destructor
 	ScummEngine(OSystem *syst, const DetectorResult &dr);
 	~ScummEngine() override;

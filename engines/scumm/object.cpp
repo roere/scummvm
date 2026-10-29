@@ -320,6 +320,9 @@ int ScummEngine::getState(int obj) {
 void ScummEngine::putState(int obj, int state) {
 	assertRange(0, obj, _numGlobalObjects - 1, "object");
 	assertRange(0, state, 0xFF, "state");
+#ifdef __EMSCRIPTEN__
+	appbaseCoopState(obj,state);
+#endif
 	_objectStateTable[obj] = state;
 }
 
@@ -1249,6 +1252,10 @@ void ScummEngine::markObjectRectAsDirty(int obj) {
 }
 
 const byte *ScummEngine::getObjOrActorName(int obj) {
+#ifdef __EMSCRIPTEN__
+    if(_game.id==GID_MANIAC && _game.version==2 && obj==10001)
+        return reinterpret_cast<const byte *>(appbaseGerman()?"Nuke'm-Handbuch":"Nuke'm manual");
+#endif
 	byte *objptr;
 	int i;
 
@@ -1258,7 +1265,12 @@ const byte *ScummEngine::getObjOrActorName(int obj) {
 	for (i = 0; i < _numNewNames; i++) {
 		if (_newNames[i] == obj) {
 			debug(5, "Found new name for object %d at _newNames[%d]", obj, i);
-			return getResourceAddress(rtObjectName, i);
+			return
+#ifdef __EMSCRIPTEN__
+				appbaseText(getResourceAddress(rtObjectName, i), Common::String::format("n.%d", obj), 2);
+#else
+				getResourceAddress(rtObjectName, i);
+#endif
 		}
 	}
 
@@ -1280,7 +1292,12 @@ const byte *ScummEngine::getObjOrActorName(int obj) {
 		else
 			offset = *(objptr + 18);
 
-		return (objptr + offset);
+		return
+#ifdef __EMSCRIPTEN__
+			appbaseText(objptr + offset, Common::String::format("n.%d", obj), 2);
+#else
+			(objptr + offset);
+#endif
 	}
 
 	return findResourceData(MKTAG('O','B','N','A'), objptr);

@@ -211,6 +211,9 @@ void Sound::startSound(int sound, int offset, int channel, int flags, int freq, 
 }
 
 void Sound::addSoundToQueue(int sound, int offset, int channel, int flags, int freq, int pan, int volume) {
+#ifdef __EMSCRIPTEN__
+    _vm->appbaseCoopSound(sound,1);
+#endif
 	assert(_soundQueuePos < ARRAYSIZE(_soundQueue));
 	_soundQueue[_soundQueuePos].sound = sound;
 	_soundQueue[_soundQueuePos].offset = offset;
@@ -1059,6 +1062,9 @@ bool Sound::isSoundInQueue(int sound) const {
 }
 
 void Sound::stopSound(int sound) {
+#ifdef __EMSCRIPTEN__
+    _vm->appbaseCoopSound(sound,0);
+#endif
 	int i;
 
 	if (sound != 0 && sound == _currentCDSound) {

@@ -1,6 +1,8 @@
 MODULE := engines/scumm
 
 MODULE_OBJS := \
+	appbase-coop.o \
+	appbase-translation.o \
 	actor.o \
 	akos.o \
 	base-costume.o \

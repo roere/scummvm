@@ -19,6 +19,9 @@
  *
  */
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
 #include "common/config-manager.h"
 #include "common/util.h"
 #include "common/system.h"
@@ -1398,7 +1401,15 @@ void ScummEngine_v0::runSentenceScript() {
 	}
 }
 
+#ifdef __EMSCRIPTEN__
+void appbaseCoopInput(int area, int value);
+#endif
 void ScummEngine_v2::runInputScript(int clickArea, int val, int mode) {
+#ifdef __EMSCRIPTEN__
+    // Keep the virtual document out of original object and owner tables.
+    if(appbaseManualInput(clickArea,val))return;
+	appbaseCoopInput(clickArea, val);
+#endif
 	int args[NUM_SCRIPT_LOCAL];
 	int verbScript;
 
@@ -1422,6 +1433,9 @@ void ScummEngine_v2::runInputScript(int clickArea, int val, int mode) {
 
 	if (verbScript)
 		runScript(verbScript, 0, 0, args);
+#ifdef __EMSCRIPTEN__
+	appbaseCoopInput(0, 0);
+#endif
 }
 
 void ScummEngine::runInputScript(int clickArea, int val, int mode) {

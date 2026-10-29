@@ -19,6 +19,11 @@
  *
  */
 
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
+
 #include "scumm/actor.h"
 #include "scumm/charset.h"
 #include "scumm/object.h"
@@ -27,6 +32,7 @@
 #include "scumm/sound.h"
 #include "scumm/util.h"
 #include "scumm/verbs.h"
+
 
 namespace Scumm {
 
@@ -366,6 +372,9 @@ int ScummEngine_v2::getVar() {
 }
 
 void ScummEngine_v2::decodeParseString() {
+#ifdef __EMSCRIPTEN__
+	const Common::String appbaseKey = appbaseTextKey();
+#endif
 	byte buffer[512];
 	byte *ptr = buffer;
 	byte c;
@@ -444,7 +453,11 @@ void ScummEngine_v2::decodeParseString() {
 		}
 	}
 
+	#ifdef __EMSCRIPTEN__
+	appbaseTalk(buffer, appbaseKey);
+	#else
 	actorTalk(buffer);
+	#endif
 }
 
 int ScummEngine_v2::readVar(uint var) {
@@ -485,6 +498,10 @@ void ScummEngine_v2::writeVar(uint var, int value) {
 		value = 1;
 	}
 
+#ifdef __EMSCRIPTEN__
+	if (appbaseCoopActive() && var == VAR_EGO) value=appbaseCoopSelect(value);
+	appbaseCoopTape(var,value);
+#endif
 	_scummVars[var] = value;
 }
 
@@ -661,6 +678,9 @@ void ScummEngine_v2::o2_addIndirect() {
 	getResultPosIndirect();
 	a = getVarOrDirectWord(PARAM_1);
 	_scummVars[_resultVarNumber] += a;
+#ifdef __EMSCRIPTEN__
+	appbaseCoopTape(_resultVarNumber, _scummVars[_resultVarNumber]);
+#endif
 }
 
 void ScummEngine_v2::o2_subIndirect() {
@@ -675,6 +695,9 @@ void ScummEngine_v2::o2_add() {
 	getResultPos();
 	a = getVarOrDirectWord(PARAM_1);
 	_scummVars[_resultVarNumber] += a;
+#ifdef __EMSCRIPTEN__
+	appbaseCoopTape(_resultVarNumber, _scummVars[_resultVarNumber]);
+#endif
 }
 
 void ScummEngine_v2::o2_subtract() {
@@ -1031,7 +1054,11 @@ void ScummEngine_v2::drawPreposition(int index) {
 			{ " ", " B", " SN", " SM", " M" },       // Hebrew
 			};
 		int lang;
-		switch (_language) {
+		switch (
+#ifdef __EMSCRIPTEN__
+			appbaseGerman() ? Common::DE_DEU :
+#endif
+			_language) {
 		case Common::DE_DEU:
 			lang = 1;
 			break;
@@ -1415,6 +1442,9 @@ void ScummEngine_v2::o2_lights() {
 		_flashlight.xStrips = a;
 		_flashlight.yStrips = b;
 	}
+#ifdef __EMSCRIPTEN__
+	if (c == 0 && appbaseCoopActive()) VAR(VAR_CURRENT_LIGHTS)=appbaseCoopLight(VAR(VAR_CURRENT_LIGHTS));
+#endif
 	_fullRedraw = true;
 }
 
@@ -1469,6 +1499,9 @@ void ScummEngine_v2::o2_setOwnerOf() {
 	obj = getVarOrDirectWord(PARAM_1);
 	owner = getVarOrDirectByte(PARAM_2);
 
+#ifdef __EMSCRIPTEN__
+	if (appbaseCoopTransfer(obj,owner)) return;
+#endif
 	setOwnerOf(obj, owner);
 }
 
@@ -1525,6 +1558,9 @@ void ScummEngine_v2::o2_roomOps() {
 }
 
 void ScummEngine_v2::o2_cutscene() {
+#ifdef __EMSCRIPTEN__
+    if(appbaseCoopSceneBegin()){--_scriptPointer;o5_breakHere();return;}
+#endif
 	vm.cutSceneData[0] = _userState | (_userPut ? 16 : 0);
 	vm.cutSceneData[1] = (int16)VAR(VAR_CURSORSTATE);
 	vm.cutSceneData[2] = _currentRoom;
@@ -1566,6 +1602,9 @@ void ScummEngine_v2::o2_endCutscene() {
 	} else {
 		actorFollowCamera(VAR(VAR_EGO));
 	}
+#ifdef __EMSCRIPTEN__
+    appbaseCoopSceneEnd();
+#endif
 }
 
 void ScummEngine_v2::o2_beginOverride() {
@@ -1598,6 +1637,9 @@ void ScummEngine_v2::o2_pickupObject() {
 	if (whereIsObject(obj) == WIO_INVENTORY)
 		return;
 
+#ifdef __EMSCRIPTEN__
+	if (appbaseCoopPickup(obj)) return;
+#endif
 	addObjectToInventory(obj, _roomResource);
 	markObjectRectAsDirty(obj);
 	putOwner(obj, VAR(VAR_EGO));
@@ -1609,6 +1651,75 @@ void ScummEngine_v2::o2_pickupObject() {
 		_sound->triggerSound(51); // play 'pickup' sound (not using the queue; see Trac#2536)
 }
 
+#ifdef __EMSCRIPTEN__
+int ScummEngine_v2::appbaseManualOwner(int owner) {
+    if(_game.id!=GID_MANIAC || _game.version!=2)return 0;
+    if(owner>=1 && owner<=7 && owner!=_appbaseManualOwner){
+        _appbaseManualOwner=owner;_appbaseManualGiving=false;
+        _inventoryOffset=0;_completeScreenRedraw=true;_fullRedraw=true;
+    }
+    return _appbaseManualOwner;
+}
+bool ScummEngine_v2::appbaseManualInput(int area,int value) {
+    if(_game.id!=GID_MANIAC || _game.version!=2)return false;
+    const int ego=VAR(VAR_EGO);
+    if(_appbaseManualGiving){
+        if(ego==_appbaseManualOwner && VAR(VAR_SENTENCE_VERB)==kVerbGive && area==kSceneClickArea){
+            const int recipient=getActorFromPos(_virtualMouse.x,_virtualMouse.y);
+            const bool selected=recipient==_scummVars[47] || recipient==_scummVars[48] || recipient==_scummVars[49];
+            if(recipient>=1 && recipient<=7 && recipient!=ego && selected &&
+               _actors[recipient]->_room==_currentRoom && _actors[ego]->_room==_currentRoom){
+                if(!appbaseCoopManualGive(recipient))appbaseManualOwner(recipient);
+                _appbaseManualGiving=false;resetSentence();drawSentence();
+            }
+            // An empty spot or NPC is not a recipient. Keep the Give sentence.
+            return true;
+        }
+        _appbaseManualGiving=false;
+        VAR(VAR_SENTENCE_OBJECT1)=0;VAR(VAR_SENTENCE_OBJECT2)=0;VAR(VAR_SENTENCE_PREPOSITION)=0;
+        drawSentence();
+    }
+    if(area!=kInventoryClickArea || value!=10001)return false;
+    if(ego==_appbaseManualOwner && VAR(VAR_SENTENCE_VERB)==kVerbGive){
+        _appbaseManualGiving=true;
+        VAR(VAR_SENTENCE_OBJECT1)=10001;VAR(VAR_SENTENCE_OBJECT2)=0;VAR(VAR_SENTENCE_PREPOSITION)=4;
+        drawSentence();return true;
+    }
+    if(ego==_appbaseManualOwner && VAR(VAR_SENTENCE_VERB)==kVerbRead)
+        EM_ASM({if(Module.mmManualRead)Module.mmManualRead();});
+    resetSentence();drawSentence();return true;
+}
+int ScummEngine_v2::appbaseManualRandom(int maximum,int value) {
+    if(!_appbaseManualRetry || _game.id!=GID_MANIAC || _game.version!=2 ||
+        _currentScript==0xff || vm.slot[_currentScript].where!=WIO_GLOBAL || vm.slot[_currentScript].number!=167)return value;
+    // Reuse the previous original challenge; the original arithmetic and code
+    // validation still run. The third draw completes the three-number retry.
+    if(maximum==9)return _scummVars[191];
+    if(maximum==37)return _scummVars[190];
+    if(maximum==7){_appbaseManualRetry=false;return _scummVars[197];}
+    return value;
+}
+int ScummEngine_v2::appbaseManual(int operation) {
+    static bool cancelRequested=false;
+    const bool keypad=_game.id==GID_MANIAC && _game.version==2 &&
+        _currentRoom==43 && _scummVars[128]==1 && isScriptRunning(44) && isScriptRunning(167);
+    if(operation==3){_appbaseManualRetry=false;_appbaseManualGiving=false;cancelRequested=false;if(VAR(VAR_SENTENCE_OBJECT1)==10001)resetSentence();return 1;}
+    if(operation==0)return keypad?1:0;
+    if(operation==1){if(!keypad)return 0;cancelRequested=true;return 1;}
+    if(operation!=2 || !cancelRequested)return 0;
+    cancelRequested=false;if(!keypad)return 0;
+    // Mirror the normal keypad cleanup, but stop the caller before it can
+    // open the door or trigger the alarm. An abandoned entry is not a wrong code.
+    _appbaseManualRetry=true;
+    stopScript(44);stopScript(167);stopTalk();
+    _scummVars[69]=0;_scummVars[67]=0;_scummVars[68]=255;
+    if(_scummVars[192]>0)--_scummVars[192];
+    VAR(VAR_CURSORSTATE)=1;setUserState(247);
+    actorFollowCamera(VAR(VAR_EGO));resetSentence();drawSentence();
+    clearClickedStatus();_keyPressed.reset();_mouseAndKeyboardStat=0;_fullRedraw=true;
+    return 1;
+}
+#endif
 void ScummEngine_v2::o2_cursorCommand() {	// TODO: Define the magic numbers
 	uint16 cmd = getVarOrDirectWord(PARAM_1);
 	byte state = cmd >> 8;

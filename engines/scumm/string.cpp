@@ -860,7 +860,12 @@ void ScummEngine_v2::drawSentence() {
 		return;
 
 	if (getResourceAddress(rtVerb, slot))
-		_sentenceBuf = (char *)getResourceAddress(rtVerb, slot);
+		_sentenceBuf = (char *)
+#ifdef __EMSCRIPTEN__
+			appbaseText(getResourceAddress(rtVerb, slot), Common::String(), 1);
+#else
+			getResourceAddress(rtVerb, slot);
+#endif
 	else
 		return;
 
@@ -1194,7 +1199,11 @@ void ScummEngine::displayDialog() {
 
 		if (_game.version <= 2) {
 			_talkDelay += _defaultTextSpeed;
+			#ifdef __EMSCRIPTEN__
+			appbaseTextCount();
+			#else
 			VAR(VAR_CHARCOUNT)++;
+			#endif
 		} else {
 			_talkDelay += (int)VAR(VAR_CHARINC);
 		}
@@ -1398,6 +1407,9 @@ int ScummEngine::convertMessageToString(const byte *msg, byte *dst, int dstSize)
 	start = dst;
 	end = dst + dstSize;
 
+	#ifdef __EMSCRIPTEN__
+	msg = appbaseText(msg, Common::String(), 1);
+	#endif
 	if (msg == nullptr) {
 		debug(0, "Bad message in convertMessageToString, ignoring");
 		return 0;

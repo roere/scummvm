@@ -1380,6 +1380,13 @@ void ScummEngine_v5::o5_getClosestObjActor() {
 	getResultPos();
 
 	act = getVarOrDirectWord(PARAM_1);
+#ifdef __EMSCRIPTEN__
+    if(appbaseCoopActive() && !appbaseCoopSceneRunning() && act>=8 && act<_numActors){
+        const int actor=appbaseCoopActor();
+        setResult(_actors[act]->_room==_currentRoom && getObjActToObjActDist(act,actor)<255?actor:255);
+        return;
+    }
+#endif
 	obj = VAR(VAR_ACTOR_RANGE_MAX);
 
 	do {
@@ -1429,6 +1436,10 @@ void ScummEngine_v5::o5_getRandomNr() {
 	getResultPos();
 	int max = getVarOrDirectByte(PARAM_1);
 	int rnd = _rnd.getRandomNumber(max);
+#ifdef __EMSCRIPTEN__
+    rnd=appbaseManualRandom(max,rnd);
+    rnd=appbaseCoopRandom(max,rnd);
+#endif
 	setResult(rnd);
 
 	debug(6, "o5_getRandomNr(): %d (min: 0, max: %d)", rnd, max);

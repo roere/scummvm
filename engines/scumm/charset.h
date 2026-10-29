@@ -271,6 +271,10 @@ public:
 };
 #endif
 
+ #ifdef __EMSCRIPTEN__
+const byte *appbaseV2Glyph(int chr, bool german);
+#endif
+
 class CharsetRendererV2 : public CharsetRendererV3 {
 protected:
 	bool _deleteFontPtr;

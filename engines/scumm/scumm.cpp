@@ -111,6 +111,9 @@
 using Common::File;
 
 namespace Scumm {
+#ifdef __EMSCRIPTEN__
+void appbaseSaveLoadFinished(bool success);
+#endif
 
 // Use g_scumm from error() ONLY
 ScummEngine *g_scumm = nullptr;
@@ -2016,6 +2019,9 @@ void ScummEngine_v0::resetScumm() {
 
 void ScummEngine_v2::resetScumm() {
 	ScummEngine_v3::resetScumm();
+#ifdef __EMSCRIPTEN__
+    _appbaseManualOwner=3;_appbaseManualGiving=false;
+#endif
 
 	if (_game.platform == Common::kPlatformNES) {
 		initNESMouseOver();
@@ -2498,10 +2504,19 @@ Common::Error ScummEngine::go() {
 	_lastWaitTime = _system->getMillis();
 
 	// If requested, load a save game instead of running the boot script
+#ifdef __EMSCRIPTEN__
+    const bool appbaseLoad = _saveLoadFlag == 2 && _saveLoadSlot == 254;
+#endif
 	if (_saveLoadFlag != 2 || !loadState(_saveLoadSlot, _saveTemporaryState)) {
+#ifdef __EMSCRIPTEN__
+        if (appbaseLoad) appbaseSaveLoadFinished(false);
+#endif
 		_saveLoadFlag = 0;
 		runBootscript();
 	} else {
+#ifdef __EMSCRIPTEN__
+        if (appbaseLoad) appbaseSaveLoadFinished(true);
+#endif
 		_loadFromLauncher = true; // The only purpose of this is triggering the IQ points update for INDY3/4
 		_saveLoadFlag = 0;
 	}
@@ -2607,6 +2622,10 @@ Common::Error ScummEngine::go() {
 		waitForTimer(delta * 4);
 
 		// Run the main loop
+#ifdef __EMSCRIPTEN__
+		// Presentation updates remain available while the VM and its clock stop.
+		if (isPaused()) appbaseTextTick();
+#endif
 		if (!isPaused()) {
 			scummLoop(delta);
 
@@ -2783,6 +2802,15 @@ void ScummEngine_v0::scummLoop(int delta) {
 }
 
 void ScummEngine::scummLoop(int delta) {
+#ifdef __EMSCRIPTEN__
+	appbaseTextTick();
+	if (appbaseCoopTick()) {
+		// Reserved AppBase persistence still runs at a normal VM loop boundary.
+		// This permits a consistent checkpoint while both players are held.
+		if(_saveLoadFlag && _saveLoadSlot==254) scummLoop_handleSaveLoad();
+		return;
+	}
+#endif
 	// Notify the script about how much time has passed, in jiffies
 	if (VAR_TIMER != 0xFF)
 		VAR(VAR_TIMER) = delta;
@@ -2980,6 +3008,9 @@ load_game:
 			playActorSounds();
 	}
 
+	#ifdef __EMSCRIPTEN__
+	appbaseTextPresented();
+	#endif
 	scummLoop_handleSound();
 
 	camera._last = camera._cur;
@@ -3111,6 +3142,13 @@ void ScummEngine::scummLoop_handleSaveLoad() {
 		if (_game.version == 6 && VAR_POST_SAVELOAD_SCRIPT != 0xFF && _currentRoom != 0)
 			runScript(VAR(VAR_POST_SAVELOAD_SCRIPT), 0, 0, nullptr);
 
+#ifdef __EMSCRIPTEN__
+        // Reserved AppBase slot is outside normal ScummVM slots (0..99).
+        // Completion also acknowledges a startup --save-slot=254 load.
+        if (_saveLoadSlot == 254) {
+            appbaseSaveLoadFinished(success);
+        } else
+#endif
 		if (!success) {
 			Common::U32String buf = Common::U32String::format(errMsg, filename.c_str());
 

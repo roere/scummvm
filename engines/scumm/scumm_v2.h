@@ -50,6 +50,17 @@ public:
 
 	void checkV2MouseOver(Common::Point pos);
 	int checkV2Inventory(int x, int y);
+    int inventoryCountV2(int owner);
+    int findInventoryV2(int owner,int index);
+#ifdef __EMSCRIPTEN__
+    bool _appbaseManualRetry=false;
+    int _appbaseManualOwner=3;
+    bool _appbaseManualGiving=false;
+    int appbaseManualOwner(int owner) override;
+    bool appbaseManualInput(int clickArea,int value);
+    int appbaseManual(int operation) override;
+    int appbaseManualRandom(int maximum,int value) override;
+#endif
 	void redrawV2Inventory();
 
 protected:

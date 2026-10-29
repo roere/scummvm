@@ -386,6 +386,23 @@ void ScummEngine_v2::checkV2MouseOver(Common::Point pos) {
 	}
 }
 
+int ScummEngine_v2::inventoryCountV2(int owner) {
+    int count=getInventoryCount(owner);
+#ifdef __EMSCRIPTEN__
+    if(_game.id==GID_MANIAC && _game.version==2 && owner==appbaseManualOwner(0))++count;
+#endif
+    return count;
+}
+int ScummEngine_v2::findInventoryV2(int owner,int index) {
+#ifdef __EMSCRIPTEN__
+    if(_game.id==GID_MANIAC && _game.version==2 && owner==appbaseManualOwner(0)){
+        if(index==1)return 10001;
+        --index;
+    }
+#endif
+    return findInventory(owner,index);
+}
+
 int ScummEngine_v2::checkV2Inventory(int x, int y) {
 	bool isNES = (_game.platform == Common::kPlatformNES);
 	int inventoryArea = isNES ? 48 : 32;
@@ -402,7 +419,7 @@ int ScummEngine_v2::checkV2Inventory(int x, int y) {
 			redrawV2Inventory();
 		}
 	} else if (_mouseOverBoxesV2[kInventoryDownArrow].rect.contains(x, y)) {
-		if (_inventoryOffset + (isNES ? 2 : 4) < getInventoryCount(_scummVars[VAR_EGO])) {
+		if (_inventoryOffset + (isNES ? 2 : 4) < inventoryCountV2(_scummVars[VAR_EGO])) {
 			_inventoryOffset += 2;
 			redrawV2Inventory();
 		}
@@ -417,7 +434,7 @@ int ScummEngine_v2::checkV2Inventory(int x, int y) {
 	if (object >= 4)
 		return 0;
 
-	return findInventory(_scummVars[VAR_EGO], object + 1 + _inventoryOffset);
+	return findInventoryV2(_scummVars[VAR_EGO], object + 1 + _inventoryOffset);
 }
 
 void ScummEngine_v2::redrawV2Inventory() {
@@ -444,16 +461,16 @@ void ScummEngine_v2::redrawV2Inventory() {
 
 	_string[1].charset = 1;
 
-	invCount = getInventoryCount(_scummVars[VAR_EGO]);
+	invCount = inventoryCountV2(_scummVars[VAR_EGO]);
 	maxVisibleInv = invCount - _inventoryOffset;
 	if (maxVisibleInv > 4)
 		maxVisibleInv = 4;
 
 	for (int i = 0; i < maxVisibleInv; i++) {
 		if (isNES) {
-			obj = findInventory(_scummVars[VAR_EGO], invCount - _inventoryOffset - i);
+			obj = findInventoryV2(_scummVars[VAR_EGO], invCount - _inventoryOffset - i);
 		} else {
-			obj = findInventory(_scummVars[VAR_EGO], i + 1 + _inventoryOffset);
+			obj = findInventoryV2(_scummVars[VAR_EGO], i + 1 + _inventoryOffset);
 		}
 
 		if (obj == 0)
@@ -490,7 +507,7 @@ void ScummEngine_v2::redrawV2Inventory() {
 	}
 
 	// If necessary, draw "down" arrow
-	if (_inventoryOffset + (isNES ? 2 : 4) < getInventoryCount(_scummVars[VAR_EGO])) {
+	if (_inventoryOffset + (isNES ? 2 : 4) < inventoryCountV2(_scummVars[VAR_EGO])) {
 		_string[1].xpos = _mouseOverBoxesV2[kInventoryDownArrow].rect.left;
 		_string[1].ypos = _mouseOverBoxesV2[kInventoryDownArrow].rect.top + vs->topline;
 		_string[1].right = _mouseOverBoxesV2[kInventoryDownArrow].rect.right - 1;
@@ -684,6 +701,9 @@ void ScummEngine_v2::checkExecVerbs() {
 		for (i = 1; i < _numVerbs; i++, vs++) {
 			if (vs->verbid && vs->saveid == 0 && vs->curmode == 1) {
 				if (_mouseAndKeyboardStat == vs->key) {
+#ifdef __EMSCRIPTEN__
+					if (!appbaseCoopVerb(vs->verbid)) return;
+#endif
 					// Trigger verb as if the user clicked it
 					runInputScript(kVerbClickArea, vs->verbid, 1);
 					return;
@@ -702,7 +722,7 @@ void ScummEngine_v2::checkExecVerbs() {
 			}
 			return;
 		case 'j': // arrow down
-			if (_inventoryOffset + 4 < getInventoryCount(_scummVars[VAR_EGO])) {
+			if (_inventoryOffset + 4 < inventoryCountV2(_scummVars[VAR_EGO])) {
 				_inventoryOffset += 2;
 				redrawV2Inventory();
 			}
@@ -724,7 +744,7 @@ void ScummEngine_v2::checkExecVerbs() {
 		}
 
 		if (object != -1) {
-			object = findInventory(_scummVars[VAR_EGO], object + 1 + _inventoryOffset);
+			object = findInventoryV2(_scummVars[VAR_EGO], object + 1 + _inventoryOffset);
 			if (object > 0)
 				runInputScript(kInventoryClickArea, object, 0);
 			return;
@@ -995,6 +1015,9 @@ int ScummEngine::findVerbAtPos(int x, int y) const {
 
 	vs = &_verbs[i];
 	do {
+#ifdef __EMSCRIPTEN__
+		if (!appbaseCoopVerb(vs->verbid)) continue;
+#endif
 		if (vs->curmode != 1 || !vs->verbid || vs->saveid || y < vs->curRect.top || y >= vs->curRect.bottom)
 			continue;
 		if (vs->center) {
@@ -1111,6 +1134,9 @@ void ScummEngine::drawVerb(int verb, int mode) {
 		return;
 
 	vs = &_verbs[verb];
+#ifdef __EMSCRIPTEN__
+	if (!appbaseCoopVerb(vs->verbid)) { restoreVerbBG(verb); return; }
+#endif
 
 	if (!vs->saveid && vs->curmode && vs->verbid) {
 		if (vs->type == kImageVerbType) {
@@ -1121,6 +1147,17 @@ void ScummEngine::drawVerb(int verb, int mode) {
 		restoreVerbBG(verb);
 
 		const bool isRtl = _language == Common::HE_ISR && !vs->center;
+		#ifdef __EMSCRIPTEN__
+        const byte *appbaseVerbSource = getResourceAddress(rtVerb, verb);
+        const int appbaseX = appbaseVerbGeometry(vs->verbid, appbaseVerbSource, 0);
+        if (appbaseX >= 0) {
+            vs->curRect.left = appbaseX;
+            vs->curRect.top = appbaseVerbGeometry(vs->verbid, appbaseVerbSource, 1);
+            static const char keys[] = "qwertasdfgzxcvb";
+            int key = appbaseVerbGeometry(vs->verbid, appbaseVerbSource, 2);
+            if (key >= 0 && key < 15) vs->key = keys[key];
+        }
+        #endif
 		_string[4].charset = vs->charset_nr;
 		_string[4].xpos = isRtl ? vs->origLeft : vs->curRect.left + pixelXOffset;
 		_string[4].ypos = vs->curRect.top + pixelYOffset;
@@ -1150,7 +1187,11 @@ void ScummEngine::drawVerb(int verb, int mode) {
 
 		if (isRtl)
 			vs->curRect.left = _charset->_str.left;
-		vs->curRect.right = pixelXOffset + ((_game.version <= 2) ? MIN<int>(vs->curRect.left + (getResourceSize(rtVerb, verb) - 1) * 8, _screenWidth) : _charset->_str.right);
+        int appbaseWidth = getResourceSize(rtVerb, verb) - 1;
+        #ifdef __EMSCRIPTEN__
+        if (_game.id == GID_MANIAC && _game.version == 2) appbaseWidth = resStrLen(appbaseText(msg, Common::String(), 1));
+        #endif
+		vs->curRect.right = pixelXOffset + ((_game.version <= 2) ? MIN<int>(vs->curRect.left + appbaseWidth * 8, _screenWidth) : _charset->_str.right);
 		vs->curRect.bottom = _charset->_str.bottom + pixelYOffset;
 		vs->oldRect = _charset->_str;
 		_charset->_str.left = _charset->_str.right;

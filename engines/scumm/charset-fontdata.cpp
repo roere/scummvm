@@ -654,6 +654,15 @@ static const byte specialCharsetData[] = {
 	0x10, 0x08, 0x00, 0x3c, 0x66, 0x66, 0x3c, 0x00,
 };
 
+#ifdef __EMSCRIPTEN__
+const byte *appbaseV2Glyph(int chr, bool german) {
+    if (chr < 0 || chr > 255) return nullptr;
+    if (german) for (uint i = 0; i < sizeof(germanCharsetDataV2); i += 2)
+        if (germanCharsetDataV2[i] == chr) return specialCharsetData + 8 * germanCharsetDataV2[i + 1];
+    return englishCharsetDataV2 + 8 * chr;
+}
+#endif
+
 CharsetRendererV2::CharsetRendererV2(ScummEngine *vm, Common::Language language)
 	: CharsetRendererV3(vm) {
 

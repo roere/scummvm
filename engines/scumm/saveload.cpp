@@ -19,6 +19,10 @@
  *
  */
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include "common/config-manager.h"
 #include "common/memstream.h"
 #include "common/savefile.h"
@@ -46,8 +50,51 @@
 
 #include "graphics/thumbnail.h"
 #include "gui/message.h"
+#ifdef __EMSCRIPTEN__
+#include "gui/gui-manager.h"
+#endif
 
 namespace Scumm {
+
+#ifdef __EMSCRIPTEN__
+// AppBase bridge v1: queue work for the normal SCUMM loop, never serialize
+// from a JavaScript callback while the engine is suspended in Asyncify.
+static int appbaseOperationStatus = 0;
+static PauseToken *appbasePause = nullptr;
+static Engine *appbasePauseOwner = nullptr;
+extern "C" EMSCRIPTEN_KEEPALIVE int mm_controls_version() { return 1; }
+extern "C" EMSCRIPTEN_KEEPALIVE int mm_controls_pause(int value) {
+    if(appbasePauseOwner && appbasePauseOwner!=g_engine){appbasePause=nullptr;appbasePauseOwner=nullptr;}
+    if(value<0)return appbasePause?1:0;
+    if(!g_engine || (value!=0 && value!=1))return 0;
+    if(value==1 && !appbasePause){
+        if(g_gui.isActive() || appbaseOperationStatus==1)return 0;
+        appbasePause=new PauseToken(g_engine->pauseEngine());appbasePauseOwner=g_engine;
+    }
+    if(value==0 && appbasePause){appbasePause->clear();delete appbasePause;appbasePause=nullptr;appbasePauseOwner=nullptr;}
+    return 1;
+}
+extern "C" EMSCRIPTEN_KEEPALIVE int mm_controls_seconds() { return g_engine?g_engine->getTotalPlayTime()/1000:0; }
+extern "C" EMSCRIPTEN_KEEPALIVE int mm_bridge_version() { return 1; }
+extern "C" EMSCRIPTEN_KEEPALIVE int mm_can_save() {
+    return g_engine && !g_engine->isPaused() && !g_gui.isActive() &&
+        appbaseOperationStatus != 1 && g_engine->canSaveGameStateCurrently();
+}
+extern "C" EMSCRIPTEN_KEEPALIVE int mm_request_save() {
+    if (!mm_can_save()) return 0;
+    appbaseOperationStatus = 1;
+    g_engine->saveGameState(254, "AppBase");
+    return 1;
+}
+extern "C" EMSCRIPTEN_KEEPALIVE int mm_save_status() { return appbaseOperationStatus; }
+extern "C" EMSCRIPTEN_KEEPALIVE int mm_request_load() {
+    if(!g_scumm || g_scumm->_game.id!=GID_MANIAC || g_scumm->_game.version!=2 ||
+        g_engine->isPaused() || g_gui.isActive() || appbaseOperationStatus==1) return 0;
+    appbaseOperationStatus=1;g_engine->loadGameState(254);return 1;
+}
+void appbaseSaveLoadFinished(bool success) { appbaseOperationStatus = success ? 2 : -1; }
+#endif
+
 
 struct SaveGameHeader {
 	uint32 type;
@@ -144,6 +191,9 @@ Common::Error ScummEngine::saveGameState(int slot, const Common::String &desc, b
 }
 
 bool ScummEngine::canSaveGameStateCurrently(Common::U32String *msg) {
+#ifdef __EMSCRIPTEN__
+	if (!appbaseTextCanSave()) return false;
+#endif
 	if (!_setupIsComplete)
 		return false;
 
@@ -583,6 +633,14 @@ bool ScummEngine::saveState(Common::WriteStream *out, bool writeHeader) {
 	Common::Serializer ser(nullptr, out);
 	ser.setVersion(CURRENT_VER);
 	saveLoadWithSerializer(ser);
+#ifdef __EMSCRIPTEN__
+    // Optional trailer: retain the original SCVM v121 stream and object table.
+    // Existing saves without it continue to start with the document at Dave.
+    if(_game.id==GID_MANIAC && _game.version==2){
+        out->writeUint32BE(MKTAG('A','B','M','M'));
+        out->writeUint32LE(appbaseManualOwner(0));
+    }
+#endif
 	return true;
 }
 
@@ -628,6 +686,9 @@ bool ScummEngine::loadState(int slot, bool compat) {
 }
 
 bool ScummEngine::loadState(int slot, bool compat, Common::String &filename) {
+#ifdef __EMSCRIPTEN__
+	appbaseTextReset();
+#endif
 	SaveGameHeader hdr;
 	int sb, sh;
 
@@ -768,6 +829,16 @@ bool ScummEngine::loadState(int slot, bool compat, Common::String &filename) {
 	Common::Serializer ser(in, nullptr);
 	ser.setVersion(hdr.ver);
 	saveLoadWithSerializer(ser);
+#ifdef __EMSCRIPTEN__
+    if(_game.id==GID_MANIAC && _game.version==2){
+        int owner=3;
+        if(in->size()-in->pos()==8 && in->readUint32BE()==MKTAG('A','B','M','M')){
+            const uint32 saved=in->readUint32LE();
+            if(saved>=1 && saved<=7)owner=saved;
+        }
+        appbaseManualOwner(owner);
+    }
+#endif
 	delete in;
 
 	// Init NES costume data
@@ -890,6 +961,9 @@ bool ScummEngine::loadState(int slot, bool compat, Common::String &filename) {
 	if (_macScreen)
 		_macScreen->fillRect(Common::Rect(_macScreen->w, _macScreen->h), 0);
 	clearTextSurface();
+#ifdef __EMSCRIPTEN__
+	appbaseTextLoaded();
+#endif
 
 	if (_macGui)
 		_macGui->resetAfterLoad();

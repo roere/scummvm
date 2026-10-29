@@ -898,6 +898,9 @@ void Actor::startWalkActor(int destX, int destY, int dir) {
 		}
 	}
 
+#ifdef __EMSCRIPTEN__
+	if (!_vm->appbaseCoopWalk(_number,_room,abr.x,abr.y,dir)) return;
+#endif
 	_walkdata.dest.x = abr.x;
 	_walkdata.dest.y = abr.y;
 	_walkdata.destbox = abr.box;
@@ -3448,6 +3451,9 @@ void ScummEngine_v7::actorTalk(const byte *msg) {
 #endif
 
 void ScummEngine::actorTalk(const byte *msg) {
+#ifdef __EMSCRIPTEN__
+	appbaseTextReset();
+#endif
 	Actor *a;
 
 	convertMessageToString(msg, _charsetBuffer, sizeof(_charsetBuffer));
