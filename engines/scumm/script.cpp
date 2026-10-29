@@ -1478,6 +1478,13 @@ void ScummEngine::decreaseScriptDelay(int amount) {
 	int i;
 	for (i = 0; i < NUM_SCRIPT_SLOT; i++, ss++) {
 		if (ss->status == ssPaused) {
+			// Keep the first kitchen encounter available regardless of time spent
+			// outside. Original script 153 stops 152 when Edna spots a visitor;
+			// its pursuit, escape and capture paths then continue unchanged.
+			if (_game.id == GID_MANIAC && _game.version == 2 &&
+				_game.platform == Common::kPlatformAmiga && ss->number == 152 &&
+				_actors[10]->_room == 7 && (getState(89) & kObjectStateIntrinsic))
+				continue;
 			ss->delay -= amount;
 			if (ss->delay < 0) {
 				if (_game.id == GID_INDY3 && _game.platform == Common::kPlatformMacintosh && ss->number == 134) {

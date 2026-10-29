@@ -324,6 +324,14 @@ bool ScummEngine::appbaseCoopTick() {
             // These original preludes execute before the synchronized cutscene.
             // Stop their timers/chases in the second context as well.
             if(v[1]==151)stopScript(91);
+            if(v[1]==88 || v[1]==89){
+                // Original script 91 chains into Ed's capture after stopping
+                // his trip scripts. The peer VM must perform that same prelude:
+                // its still-running search can otherwise overwrite victim 113
+                // with 255 when the visitor leaves the hallway.
+                stopScript(91);stopScript(87);stopScript(98);stopScript(97);stopScript(151);
+                if(v[1]==89)stopScript(88);
+            }
             // Original 126 sets mode 108=3 before its cutscene. Preserve that
             // prelude on both VMs so loadRoom(30) cannot start a second 125.
             if(v[1]==126){_scummVars[108]=3;stopScript(125);}
