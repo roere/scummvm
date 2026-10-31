@@ -2733,6 +2733,9 @@ void ScummEngine_v5::o5_isSoundRunning() {
 	snd = getVarOrDirectByte(PARAM_1);
 	if (snd)
 		snd = _sound->isSoundRunning(snd);
+#ifdef __EMSCRIPTEN__
+    snd=appbasePeerSound(0,snd);
+#endif
 	setResult(snd);
 }
 

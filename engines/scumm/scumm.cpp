@@ -2805,8 +2805,9 @@ void ScummEngine_v0::scummLoop(int delta) {
 
 void ScummEngine::scummLoop(int delta) {
 #ifdef __EMSCRIPTEN__
+	const bool peerWaiting=appbasePeerTick(delta);
 	appbaseTextTick();
-	if (appbaseCoopTick()) {
+	if (peerWaiting || appbaseCoopTick()) {
 		// Reserved AppBase persistence still runs at a normal VM loop boundary.
 		// This permits a consistent checkpoint while both players are held.
 		if(_saveLoadFlag && _saveLoadSlot==254) scummLoop_handleSaveLoad();
@@ -2898,6 +2899,10 @@ void ScummEngine::scummLoop(int delta) {
 		}
 	}
 
+#ifdef __EMSCRIPTEN__
+	appbasePeerMusic();
+#endif
+
 	// Another v8 quirk: runAllScripts() is called here; after that we can
 	// finally restore the blastTexts/blastObject rects...
 	if (_game.version == 8) {
@@ -2908,9 +2913,19 @@ void ScummEngine::scummLoop(int delta) {
 #endif
 	}
 
-	if (_game.version < 8)
+	if (_game.version < 8) {
 load_game:
+#ifdef __EMSCRIPTEN__
+        // A reserved cooperative restore can be requested while this frame is
+        // already running. Stop at the restored checkpoint: its script delays
+        // belong to the next complete frame, not this frame's remaining tail.
+        const bool appbaseHeldRestore=_saveLoadFlag==2 && _saveLoadSlot==254 && appbaseCoopGet(0,0,20)==1;
+#endif
 		scummLoop_handleSaveLoad();
+#ifdef __EMSCRIPTEN__
+        if(appbaseHeldRestore)return;
+#endif
+    }
 
 	if (_completeScreenRedraw) {
 		// Update volume settings
@@ -3033,6 +3048,9 @@ load_game:
 
 	/* show or hide mouse */
 	CursorMan.showMouse(_cursor.state > 0);
+#ifdef __EMSCRIPTEN__
+	appbasePeerEnd();
+#endif
 }
 
 #ifdef ENABLE_HE

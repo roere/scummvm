@@ -53,6 +53,7 @@ public:
     int inventoryCountV2(int owner);
     int findInventoryV2(int owner,int index);
 #ifdef __EMSCRIPTEN__
+    int appbasePeerInventory(int value) { if(value>=0)_inventoryOffset=value;return _inventoryOffset; }
     bool _appbaseManualRetry=false;
     int _appbaseManualOwner=3;
     struct AppbaseItem { int id,owner; byte name[81]; };

@@ -1406,6 +1406,9 @@ void appbaseCoopInput(int area, int value);
 #endif
 void ScummEngine_v2::runInputScript(int clickArea, int val, int mode) {
 #ifdef __EMSCRIPTEN__
+	appbasePeerInput(clickArea,val,mode);
+#endif
+#ifdef __EMSCRIPTEN__
     // Keep the virtual document out of original object and owner tables.
     if(appbaseManualInput(clickArea,val))return;
 	appbaseCoopInput(clickArea, val);

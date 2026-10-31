@@ -607,6 +607,12 @@ public:
 	bool appbaseCoopWalk(int actor,int room,int x,int y,int dir);
 	bool appbaseCoopTransfer(int object,int owner);
 	int appbaseCoopLight(int flags);
+	bool appbasePeerTick(int &delta);
+	void appbasePeerEnd();
+	void appbasePeerMusic();
+	void appbasePeerInput(int area,int value,int mode);
+	bool appbasePeerInputs();
+	int appbasePeerSound(int sound,int value);
 	bool appbaseCoopTick();
 	int appbaseCoopGet(int kind,int id,int field);
 	const char *appbaseCoopName(int id);

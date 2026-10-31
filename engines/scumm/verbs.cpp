@@ -688,6 +688,9 @@ void ScummEngine::checkExecVerbs() {
 }
 
 void ScummEngine_v2::checkExecVerbs() {
+#ifdef __EMSCRIPTEN__
+	if(appbasePeerInputs())return;
+#endif
 	int i, over;
 	VerbSlot *vs;
 
