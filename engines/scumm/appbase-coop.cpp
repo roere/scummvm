@@ -271,11 +271,16 @@ int ScummEngine::appbaseCoopLight(int flags) {
 	emit(8,_currentRoom,flags,entering?1:0);
 	return flags;
 }
+extern bool appbaseInitialFramePresented();
 int ScummEngine::appbaseCoopGet(int kind,int id,int field) {
 	if ((_game.id != GID_MANIAC && _game.id != GID_ZAK) || _game.version != 2) return -1;
+    // Browser callbacks may run before native setup has allocated variables.
+    if(!_setupIsComplete)return 0;
     // Original Zak SWITCH availability: scripts 4/19 gate the verb with
     // global 199 and state04 of object 169; per-actor bit 1470 disables a kid.
+    if(kind==10 && _game.id==GID_ZAK)return _setupIsComplete && appbaseInitialFramePresented() && _numActors>1 && _scummVars && _currentRoom>0 && _roomResource>0 && _currentRoom!=50 && !isScriptRunning(7) && appbaseTextCanSave()?1:0;
     if(kind==8 && _game.id==GID_ZAK && id>=1 && id<=4){
+        if(!_setupIsComplete || id>=_numActors || !_scummVars)return 0;
         const int bit=1470+id;
         return _scummVars[199]!=0 && (getState(169)&kObjectStateLocked)!=0 &&
             (_scummVars[bit>>4]&(1<<(bit&15)))==0 && _actors[id]->_room>0 ? 1:0;

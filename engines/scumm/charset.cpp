@@ -939,8 +939,8 @@ void CharsetRendererV3::printChar(int chr, bool ignoreCharsetMask) {
 		height = getDrawHeightIntern(chr);
 	}
 	#ifdef __EMSCRIPTEN__
-	if (_vm->_game.id == GID_MANIAC && _vm->_game.version == 2)
-		charPtr = appbaseV2Glyph(chr, _vm->appbaseGerman());
+	if ((_vm->_game.id == GID_MANIAC || _vm->_game.id == GID_ZAK) && _vm->_game.version == 2)
+		charPtr = appbaseV2Glyph(chr, _vm->appbaseGerman() || _vm->_language == Common::DE_DEU);
 	#endif
 	setDrawCharIntern(chr);
 
@@ -1031,8 +1031,8 @@ void CharsetRendererV3::drawChar(int chr, Graphics::Surface &s, int x, int y) {
 		height = getDrawHeightIntern(chr);
 	}
 	#ifdef __EMSCRIPTEN__
-	if (_vm->_game.id == GID_MANIAC && _vm->_game.version == 2)
-		charPtr = appbaseV2Glyph(chr, _vm->appbaseGerman());
+	if ((_vm->_game.id == GID_MANIAC || _vm->_game.id == GID_ZAK) && _vm->_game.version == 2)
+		charPtr = appbaseV2Glyph(chr, _vm->appbaseGerman() || _vm->_language == Common::DE_DEU);
 	#endif
 	setDrawCharIntern(chr);
 	drawBits1(s, x, y, charPtr, y, width, height);

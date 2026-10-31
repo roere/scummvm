@@ -150,6 +150,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE int mm_request_save() {
     g_engine->saveGameState(254, "AppBase");
     return 1;
 }
+// A cooperative bootstrap may snapshot Zak's title/dream room (including
+// room zero) once setup is complete. Ordinary save/menu eligibility is intact.
+extern "C" EMSCRIPTEN_KEEPALIVE int mm_can_coop_save() {
+    return g_scumm && g_scumm->_game.id==GID_ZAK && g_scumm->_game.version==2 &&
+        !g_engine->isPaused() && !g_gui.isActive() && appbaseOperationStatus!=1 &&
+        g_scumm->appbaseCoopGet(10,0,0)==1;
+}
+extern "C" EMSCRIPTEN_KEEPALIVE int mm_request_coop_save() {
+    if(!mm_can_coop_save())return 0;
+    appbaseOperationStatus=1;g_engine->saveGameState(254,"AppBase cooperative bootstrap");return 1;
+}
 extern "C" EMSCRIPTEN_KEEPALIVE int mm_save_status() { return appbaseOperationStatus; }
 extern "C" EMSCRIPTEN_KEEPALIVE int mm_request_load() {
     if(!g_scumm || (g_scumm->_game.id!=GID_MANIAC && g_scumm->_game.id!=GID_ZAK) || g_scumm->_game.version!=2 ||

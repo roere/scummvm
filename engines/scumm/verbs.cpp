@@ -1188,7 +1188,7 @@ void ScummEngine::drawVerb(int verb, int mode) {
 			vs->curRect.left = _charset->_str.left;
         int appbaseWidth = getResourceSize(rtVerb, verb) - 1;
         #ifdef __EMSCRIPTEN__
-        if (_game.id == GID_MANIAC && _game.version == 2) appbaseWidth = resStrLen(appbaseText(msg, Common::String(), 1));
+        if ((_game.id == GID_MANIAC || _game.id == GID_ZAK) && _game.version == 2) appbaseWidth = resStrLen(appbaseText(msg, Common::String(), 1));
         #endif
 		vs->curRect.right = pixelXOffset + ((_game.version <= 2) ? MIN<int>(vs->curRect.left + appbaseWidth * 8, _screenWidth) : _charset->_str.right);
 		vs->curRect.bottom = _charset->_str.bottom + pixelYOffset;

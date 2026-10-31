@@ -18,9 +18,10 @@ static bool countedSpeech = false;
 static int originalCount = 0, translatedCount = 0, renderedCount = 0, mappedCount = 0;
 static int initialTalkDelay = 0, messageTextSpeed = 0;
 static int language = 0, requestedLanguage = 0;
-static bool loadedFramePending = false;
+static bool loadedFramePending = false, initialFramePresented = false;
+bool appbaseInitialFramePresented() { return initialFramePresented; }
 
-bool ScummEngine::appbaseGerman() const { return _game.id == GID_MANIAC && _game.version == 2 && language == 1; }
+bool ScummEngine::appbaseGerman() const { return (_game.id == GID_MANIAC || _game.id == GID_ZAK) && _game.version == 2 && language == 1; }
 Common::String ScummEngine::appbaseTextKey() const {
     if (_currentScript == 0xff || !_scriptPointer || !_scriptOrgPointer) return Common::String();
     const ScriptSlot &slot = vm.slot[_currentScript];
@@ -87,18 +88,18 @@ bool ScummEngine::appbaseTextCanSave() const {
 }
 void ScummEngine::appbaseTextReset() { if (!packedExpansion) countedSpeech = false; }
 int ScummEngine::appbaseVerbGeometry(int verb, const byte *source, int field) {
-    if (!source || _game.id != GID_MANIAC || _game.version != 2) return -1;
+    if (!source || (_game.id != GID_MANIAC && _game.id != GID_ZAK) || _game.version != 2) return -1;
     return EM_ASM_INT({
         return Module.mmVerbGeometry ? Module.mmVerbGeometry(HEAPU8, $0, $1, $2, $3, $4) : -1;
     }, verb, source, resStrLen(source), language, field);
 }
 void ScummEngine::appbaseTextLoaded() {
     appbaseManual(3);
-    loadedFramePending = _game.id == GID_MANIAC && _game.version == 2;
+    loadedFramePending = (_game.id == GID_MANIAC || _game.id == GID_ZAK) && _game.version == 2;
 }
-void ScummEngine::appbaseTextPresented() { loadedFramePending = false; }
+void ScummEngine::appbaseTextPresented() { loadedFramePending = false; initialFramePresented = true; }
 void ScummEngine::appbaseTextTick() {
-    if (_game.id != GID_MANIAC || _game.version != 2 || g_gui.isActive()) return;
+    if ((_game.id != GID_MANIAC && _game.id != GID_ZAK) || _game.version != 2 || g_gui.isActive()) return;
     // A loaded co-op guest can be paused before its first normal drawing pass.
     // Rebuild presentation only: no scripts, walking, costume animation, speech
     // timing, camera motion or palette cycling may advance while paused.
