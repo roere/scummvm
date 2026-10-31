@@ -50,8 +50,16 @@ static bool peerInFrame=false;
 static Common::Array<CoopEvent> peerQueue,peerRecord,peerInputs,peerSounds,peerRandom,peerChat;
 static CoopEvent peerEnd,peerInput;
 static int peerKeyFlags=0;
+bool appbasePeerPreservesContext() { return peerRole!=0 || preparatoryFrozen; }
 static void peerRecordEvent(int kind,int a=0,int b=0,int c=0,int d=0,int e=0,int f=0) {
     CoopEvent record={{kind,peerFrame,a,b,c,d,e,f}};peerRecord.push_back(record);
+}
+int ScummEngine::appbasePeerWait(int quarterFrames) const {
+    if(peerRole!=2 || preparatoryFrozen || frozen || peerFailed)return quarterFrames;
+    // The controller already paced these original frames. Waiting for their
+    // timers a second time leaves every network/browser stall permanently queued.
+    for(uint i=0;i<peerQueue.size();++i)if(peerQueue[i].v[0]==27)return 0;
+    return MIN(quarterFrames,4);
 }
 bool ScummEngine::appbasePeerTick(int &delta) {
     if(!peerRole)return false;

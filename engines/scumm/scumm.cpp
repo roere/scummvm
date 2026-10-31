@@ -114,6 +114,7 @@ namespace Scumm {
 #ifdef __EMSCRIPTEN__
 void appbaseSaveLoadFinished(bool success);
 void appbasePresentationTick();
+bool appbasePeerPreservesContext();
 #endif
 
 // Use g_scumm from error() ONLY
@@ -2620,7 +2621,14 @@ Common::Error ScummEngine::go() {
 		// but this way if it overshoots that time will count as part
 		// of the main loop.
 
+#ifdef __EMSCRIPTEN__
+        const int peerWait=appbasePeerWait(delta*4);
+        waitForTimer(peerWait);
+        // Give incoming messages and browser UI a turn between catch-up frames.
+        if(peerWait==0 && delta>0)_system->delayMillis(1);
+#else
 		waitForTimer(delta * 4);
+#endif
 
 		// Run the main loop
 #ifdef __EMSCRIPTEN__
@@ -3496,6 +3504,18 @@ void ScummEngine_v3::scummLoop_handleSaveLoad() {
 		clearCharsetMask();
 		_charset->_hasMask = false;
 		bool restoreSounds = true;
+
+#ifdef __EMSCRIPTEN__
+        // A cooperative Zak checkpoint already contains the exact original VM
+        // context. The normal v1/v2 restore workaround enters save room 50,
+        // executes its scripts and restarts room timers. Doing that after the
+        // reserved load acknowledgement silently advances each peer differently.
+        if(_game.id==GID_ZAK && _game.version==2 && appbasePeerPreservesContext()) {
+            redrawVerbs();
+            _musicEngine->restoreAfterLoad();
+            return;
+        }
+#endif
 
 		if (_game.id == GID_LOOM) {
 			if (_currentRoom == 70) {

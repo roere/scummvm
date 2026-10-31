@@ -608,6 +608,7 @@ public:
 	bool appbaseCoopTransfer(int object,int owner);
 	int appbaseCoopLight(int flags);
 	bool appbasePeerTick(int &delta);
+	int appbasePeerWait(int quarterFrames) const;
 	void appbasePeerEnd();
 	void appbasePeerBeforeInput();
 	void appbasePeerAfterInput();
