@@ -609,6 +609,7 @@ public:
 	int appbaseCoopLight(int flags);
 	bool appbasePeerTick(int &delta);
 	void appbasePeerEnd();
+	void appbasePeerAfterInput();
 	void appbasePeerMusic();
 	void appbasePeerInput(int area,int value,int mode);
 	bool appbasePeerInputs();

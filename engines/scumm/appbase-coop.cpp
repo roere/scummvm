@@ -45,7 +45,7 @@ static bool preparatoryFrozen=false,pendingIntroStart=false,introAutoHold=false;
 static int pendingSkipScript=-1,pendingSkipTicks=0;
 // Native shared-character replication. Participants execute original scripts;
 // only bounded input/timer/RNG records travel through the normal party exchange.
-static int peerRole=0,peerFrame=0,peerAck=0,peerFailed=0,peerMusic=0;
+static int peerRole=0,peerFrame=0,peerAck=0,peerFailed=0,peerMusic=0,peerTextSpeed=0;
 static bool peerInFrame=false;
 static Common::Array<CoopEvent> peerQueue,peerRecord,peerInputs,peerSounds,peerRandom,peerChat;
 static CoopEvent peerEnd;
@@ -66,31 +66,32 @@ bool ScummEngine::appbasePeerTick(int &delta) {
         peerFrame=start.v[1];delta=start.v[2];_mouse.x=start.v[3];_mouse.y=start.v[4];
         _leftBtnPressed=start.v[5]&15;_rightBtnPressed=(start.v[5]>>4)&15;
         _keyPressed=Common::KeyState(static_cast<Common::KeyCode>(start.v[6]),start.v[7],clock.v[5]);
-        _rnd.setSeed(uint32(clock.v[2])|(uint32(clock.v[3])<<16));peerMusic=clock.v[4];static_cast<ScummEngine_v2 *>(this)->appbasePeerInventory(clock.v[6]);
+        _rnd.setSeed(uint32(clock.v[2])|(uint32(clock.v[3])<<16));peerMusic=clock.v[4];peerTextSpeed=clock.v[7];static_cast<ScummEngine_v2 *>(this)->appbasePeerInventory(clock.v[6]);
         for(int i=2;i<end;++i) {
             const CoopEvent &r=peerQueue[i];
             if(r.v[0]==25)peerInputs.push_back(r);
             if(r.v[0]==30)peerSounds.push_back(r);
             if(r.v[0]==31)peerRandom.push_back(r);
-            if(r.v[0]==26) {
-                const int offset=r.v[4],word=r.v[5],length=r.v[6];
-                if(offset==0){chatLength=0;memset(chatText,0,sizeof(chatText));}
-                for(int j=0;j<4 && offset+j<length;++j)chatText[offset+j]=(word>>(7*j))&127;
-                if(offset+4>=length) {
-                    ChatSpeech line;line.actor=r.v[2];line.room=r.v[3];line.age=0;memcpy(line.text,chatText,length);line.text[length]=0;chatSpeech.push_back(line);chatDeliveryStatus=1;
-                }
-            }
+            if(r.v[0]==26 && !EM_ASM_INT({return Module.mmReplaySpeech ? Module.mmReplaySpeech($0) : 0;},r.v[2]))peerFailed=5;
         }
         peerEnd=peerQueue[end];for(int i=0;i<=end;++i)peerQueue.remove_at(0);
     } else {
         ++peerFrame;peerRecord.clear();
         peerMusic=_musicEngine?_musicEngine->getMusicTimer()*getTimerFrequency()/240.0:0;
         const uint32 seed=_rnd.getSeed();
-        peerRecordEvent(23,delta,MAX(0,int(_mouse.x)),MAX(0,int(_mouse.y)),(_leftBtnPressed&15)|((_rightBtnPressed&15)<<4),_keyPressed.keycode,_keyPressed.ascii);
+        const bool localUiKey=_keyPressed.ascii=='+' || _keyPressed.ascii=='-' || _keyPressed.ascii=='[' || _keyPressed.ascii==']' || (_keyPressed.flags&(Common::KBD_CTRL|Common::KBD_ALT|Common::KBD_META));
+        peerRecordEvent(23,delta,MAX(0,int(_mouse.x)),MAX(0,int(_mouse.y)),(_leftBtnPressed&15)|((_rightBtnPressed&15)<<4),localUiKey?0:_keyPressed.keycode,localUiKey?0:_keyPressed.ascii);
         peerRecordEvent(24,seed&65535,seed>>16,peerMusic,_keyPressed.flags,static_cast<ScummEngine_v2 *>(this)->appbasePeerInventory(-1),0);
         for(uint i=0;i<peerChat.size();++i){CoopEvent r=peerChat[i];r.v[1]=peerFrame;peerRecord.push_back(r);}peerChat.clear();
     }
     peerInFrame=true;return false;
+}
+void ScummEngine::appbasePeerAfterInput() {
+    if(!peerRole || !peerInFrame)return;
+    // Native settings dialogs belong to the controller's UI. Replicate their
+    // completed text-speed setting without opening an unattended peer dialog.
+    if(peerRole==1)peerRecord[1].v[7]=_defaultTextSpeed;
+    else {_defaultTextSpeed=peerTextSpeed;setTalkSpeed(peerTextSpeed);if(VAR_CHARINC!=0xff)VAR(VAR_CHARINC)=9-peerTextSpeed;}
 }
 void ScummEngine::appbasePeerMusic() { if(peerRole && peerInFrame && VAR_MUSIC_TIMER!=0xff)VAR(VAR_MUSIC_TIMER)=peerMusic; }
 void ScummEngine::appbasePeerInput(int area,int value,int mode) { if(peerRole==1 && peerInFrame)peerRecordEvent(25,area,value,mode); }
@@ -679,8 +680,11 @@ EMSCRIPTEN_KEEPALIVE int mm_chat_byte(int index,int value) {
 }
 EMSCRIPTEN_KEEPALIVE int mm_chat_say(int actor,int room,int length) {
     if(!g_scumm || (!localActor?(g_scumm->_game.id!=GID_ZAK || actor!=g_scumm->appbaseCoopGet(0,0,1)):(actor!=localActor && actor!=remoteActor)) || g_scumm->appbaseCoopGet(0,0,28)!=1 || room<1 || room>(g_scumm->_game.id==GID_ZAK?255:53) || length!=chatLength || length<1 || length>160 || chatSpeech.size()>=8)return 0;
-    if(peerRole==2)return 0;
-    if(peerRole==1)for(int offset=0;offset<length;offset+=4){int word=0;for(int j=0;j<4 && offset+j<length;++j)word|=int(chatText[offset+j])<<(7*j);CoopEvent r={{26,0,actor,room,offset,word,length,0}};peerChat.push_back(r);}
+    if(peerRole==1){
+        const int sequence=EM_ASM_INT({return Module.mmChatSequence || 0;});
+        if(sequence<=0)return 0;
+        CoopEvent record={{26,0,sequence,0,0,0,0,0}};peerChat.push_back(record);
+    }
     ChatSpeech line;line.actor=actor;line.room=room;line.age=0;memcpy(line.text,chatText,length+1);chatSpeech.push_back(line);chatLength=0;chatDeliveryStatus=1;return 1;
 }
 EMSCRIPTEN_KEEPALIVE int mm_coop_scene(int operation,int script,int offset,int actor) {

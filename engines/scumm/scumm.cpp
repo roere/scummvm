@@ -2861,6 +2861,9 @@ void ScummEngine::scummLoop(int delta) {
 	// Several time-based effects (e.g. shaking) depend on this...
 	if (_game.version != 7 || isFTDOSDemo) {
 		processInput();
+#ifdef __EMSCRIPTEN__
+        appbasePeerAfterInput();
+#endif
 
 		// Additionally, v8 runs checkExecVerbs() at the end of processInput()...
 		if (_game.version == 8) {
