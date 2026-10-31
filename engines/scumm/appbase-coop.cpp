@@ -38,7 +38,7 @@ static int conflictStage=0;
 struct ChatSpeech { int actor,room,age; byte text[161]; };
 static Common::Array<ChatSpeech> chatSpeech;
 static byte chatText[161] = {};
-static int chatLength=0;
+static int chatLength=0,chatDeliveryStatus=0;
 static bool preparatoryFrozen=false,pendingIntroStart=false,introAutoHold=false;
 static int pendingSkipScript=-1,pendingSkipTicks=0;
 static bool presentationObject(int obj) { return (obj>=260 && obj<=265) || obj==395 || obj==403 || (obj>=541 && obj<=553); }
@@ -314,6 +314,8 @@ int ScummEngine::appbaseCoopGet(int kind,int id,int field) {
 		case 25:return sceneScript;
         case 26:return appbaseManualOwner(0);
         case 27:return _roomResource;
+        case 28:return _userPut>0 && !vm.cutSceneStackPointer;
+        case 29:return chatSpeech.size();case 30:return chatDeliveryStatus;
 		}
 	}
 	if (kind == 1 && id > 0 && id < _numActors) {
@@ -348,12 +350,26 @@ int ScummEngine::appbaseCoopGet(int kind,int id,int field) {
 	return -1;
 }
 bool ScummEngine::appbaseCoopTick() {
+    const auto chatTick=[&]() {
+    if(chatSpeech.empty())return;
+    ChatSpeech &line=chatSpeech[0];++line.age;
+    // A new cutscene or loss of control discards queued user speech.
+    if(line.age>600 || !appbaseCoopGet(0,0,28) || _currentRoom!=line.room || _actors[line.actor]->_room!=line.room) { chatDeliveryStatus=line.age>600?5:(!appbaseCoopGet(0,0,28)?3:4);chatSpeech.remove_at(0);return; }
+    if(!_haveMsg && conflictSpeech.empty()) {
+        _actorToPrintStrFor=line.actor;
+        EM_ASM({ Module.mmChatSpeaking=true; });
+        actorTalk(line.text);chatDeliveryStatus=2;
+        EM_ASM({ Module.mmChatSpeaking=false; });
+        chatSpeech.remove_at(0);
+    }
+    };
     appbaseManual(2);
 	if(pendingSkipScript>=0) {
 		if(vm.cutScenePtr[0] && (pendingSkipScript==0 || vm.slot[vm.cutSceneScript[0]].number==pendingSkipScript)) { abortCutscene();pendingSkipScript=-1; }
 		else if(++pendingSkipTicks>120) pendingSkipScript=-1;
 	}
 	if (!localActor) {
+        if(_game.id==GID_ZAK && !preparatoryFrozen)chatTick();
 		if(pendingIntroStart) { pendingIntroStart=false;preparatoryFrozen=false;doSentence(9,403,0); }
 		const bool introComplete=_game.id==GID_MANIAC && introAutoHold && !pendingIntroStart && _actors[3]->_room==44 && _userPut>0 && !isScriptRunning(131);
 		// The last line outlives script 131. Keep speech running until the
@@ -522,19 +538,7 @@ bool ScummEngine::appbaseCoopTick() {
 	Actor *peer=_actors[remoteActor];
 	if(predicting && peer->_room==remoteMove.v[2] && !peer->_moving && peer->getRealPos().x==remoteMove.v[3] && peer->getRealPos().y==remoteMove.v[4]) predicting=false;
 	if(!frozen) {
-        if(!chatSpeech.empty()) {
-            ChatSpeech &line=chatSpeech[0];++line.age;
-            if(line.age>600 || _currentRoom!=line.room || _actors[line.actor]->_room!=line.room) chatSpeech.remove_at(0);
-            else if(!_haveMsg && !vm.cutSceneStackPointer && _userPut>0 && conflictSpeech.empty()) {
-                _actorToPrintStrFor=line.actor;
-                // User text is already plain printable text, not a translation key
-                // or VM bytecode. Never replace it using the game text catalog.
-                EM_ASM({ Module.mmChatSpeaking=true; });
-                actorTalk(line.text);
-                EM_ASM({ Module.mmChatSpeaking=false; });
-                chatSpeech.remove_at(0);
-            }
-        }
+        chatTick();
 		Actor *a=_actors[localActor];
 		if(!conflictSpeech.empty() && !_haveMsg && !vm.cutSceneStackPointer && _userPut>0) {
 			const int *v=conflictSpeech[0].v;
@@ -576,8 +580,8 @@ EMSCRIPTEN_KEEPALIVE int mm_chat_byte(int index,int value) {
     chatText[chatLength++]=value;chatText[chatLength]=0;return 1;
 }
 EMSCRIPTEN_KEEPALIVE int mm_chat_say(int actor,int room,int length) {
-    if(!g_scumm || !localActor || (actor!=localActor && actor!=remoteActor) || room<1 || room>(g_scumm->_game.id==GID_ZAK?255:53) || length!=chatLength || length<1 || length>160 || chatSpeech.size()>=8)return 0;
-    ChatSpeech line;line.actor=actor;line.room=room;line.age=0;memcpy(line.text,chatText,length+1);chatSpeech.push_back(line);chatLength=0;return 1;
+    if(!g_scumm || (!localActor?(g_scumm->_game.id!=GID_ZAK || actor!=g_scumm->appbaseCoopGet(0,0,1)):(actor!=localActor && actor!=remoteActor)) || g_scumm->appbaseCoopGet(0,0,28)!=1 || room<1 || room>(g_scumm->_game.id==GID_ZAK?255:53) || length!=chatLength || length<1 || length>160 || chatSpeech.size()>=8)return 0;
+    ChatSpeech line;line.actor=actor;line.room=room;line.age=0;memcpy(line.text,chatText,length+1);chatSpeech.push_back(line);chatLength=0;chatDeliveryStatus=1;return 1;
 }
 EMSCRIPTEN_KEEPALIVE int mm_coop_scene(int operation,int script,int offset,int actor) {
     return g_scumm?g_scumm->appbaseCoopSceneCommand(operation,script,offset,actor):0;
