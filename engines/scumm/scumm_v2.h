@@ -55,7 +55,12 @@ public:
 #ifdef __EMSCRIPTEN__
     bool _appbaseManualRetry=false;
     int _appbaseManualOwner=3;
-    bool _appbaseManualGiving=false;
+    struct AppbaseItem { int id,owner; byte name[81]; };
+    AppbaseItem _appbaseItems[32] = {};
+    int _appbaseItemCount=0,_appbaseGivingItem=0;
+    void appbaseItemsReset();
+    int appbaseItem(int operation,int id,int value=0) override;
+    const byte *appbaseItemName(int id) override;
     int appbaseManualOwner(int owner) override;
     bool appbaseManualInput(int clickArea,int value);
     int appbaseManual(int operation) override;

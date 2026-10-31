@@ -572,6 +572,9 @@ protected:
 public:
 #ifdef __EMSCRIPTEN__
 	bool appbaseGerman() const;
+    virtual int appbaseItem(int operation,int id,int value=0) { return 0; }
+    virtual const byte *appbaseItemName(int id) { return nullptr; }
+    bool appbaseCoopItemGive(int item,int recipient);
     virtual int appbaseManual(int operation) { return 0; }
     virtual int appbaseManualOwner(int owner) { return 0; }
     bool appbaseCoopManualGive(int recipient);

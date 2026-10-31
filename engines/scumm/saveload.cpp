@@ -52,6 +52,8 @@
 #include "gui/message.h"
 #ifdef __EMSCRIPTEN__
 #include "gui/gui-manager.h"
+#include "audio/mixer.h"
+#include "graphics/scalerplugin.h"
 #endif
 
 namespace Scumm {
@@ -75,6 +77,68 @@ extern "C" EMSCRIPTEN_KEEPALIVE int mm_controls_pause(int value) {
     return 1;
 }
 extern "C" EMSCRIPTEN_KEEPALIVE int mm_controls_seconds() { return g_engine?g_engine->getTotalPlayTime()/1000:0; }
+// Presentation only: no pause token, script, inventory or save data is changed.
+// All modes use the same SDL surface and 2x factor, so changing a filter does
+// not replace the game or its canvas/context.
+static int appbaseApplyPresentation(int kind, int value) {
+    static int audioMode = 0;
+    if (!g_engine || !g_system) return -1;
+    if (kind == 0) {
+        const char *names[] = {"normal", "supereagle", "hq"};
+        if (value < 0) {
+            for (int i = 0; i < 3; ++i)
+                if ((int)g_system->getScaler() == ScalerMan.findScalerPluginIndex(names[i])) return i;
+            return -1;
+        }
+        if (value > 2) return -1;
+        const int scaler = ScalerMan.findScalerPluginIndex(names[value]);
+        if (scaler < 0) return -1;
+        g_system->beginGFXTransaction();
+        const bool accepted = g_system->setScaler((uint)scaler, 2);
+        const OSystem::TransactionError error = g_system->endGFXTransaction();
+        return accepted && error == OSystem::kTransactionSuccess ? value : -1;
+    }
+    Audio::Mixer *mixer = g_system->getMixer();
+    if (!mixer) return -1;
+    if (kind == 2 && value < 0)
+        return (mixer->isSoundTypeMuted(Audio::Mixer::kMusicSoundType) ? 1 : 0) |
+               (mixer->isSoundTypeMuted(Audio::Mixer::kSFXSoundType) ? 2 : 0);
+    if (kind != 1) return -1;
+    if (value < 0) return audioMode;
+    if (value > 2) return -1;
+    g_engine->syncSoundSettings();
+    if (value == 1) mixer->muteSoundType(Audio::Mixer::kMusicSoundType, true);
+    if (value == 2) {
+        mixer->muteSoundType(Audio::Mixer::kPlainSoundType, true);
+        mixer->muteSoundType(Audio::Mixer::kMusicSoundType, true);
+        mixer->muteSoundType(Audio::Mixer::kSFXSoundType, true);
+        mixer->muteSoundType(Audio::Mixer::kSpeechSoundType, true);
+    }
+    audioMode = value;
+    return value;
+}
+static int appbasePendingGraphics = -1, appbasePendingAudio = -1, appbasePresentationStatus = 0;
+extern "C" EMSCRIPTEN_KEEPALIVE int mm_presentation(int kind, int value) {
+    if (!g_engine) return -1;
+    if (value < 0) return kind == 3 ? appbasePresentationStatus : appbaseApplyPresentation(kind, value);
+    if (value > 2 || (kind != 0 && kind != 1)) return -1;
+    if (kind == 0) appbasePendingGraphics = value;
+    else appbasePendingAudio = value;
+    appbasePresentationStatus = 1;
+    return value;
+}
+// The browser can call while Asyncify has suspended the native stack. Only
+// queue from that callback; allocate/switch scalers on the normal engine loop.
+void appbasePresentationTick() {
+    if (appbasePresentationStatus != 1) return;
+    bool success = true;
+    if (appbasePendingGraphics >= 0)
+        success = appbaseApplyPresentation(0, appbasePendingGraphics) == appbasePendingGraphics;
+    if (appbasePendingAudio >= 0)
+        success = (appbaseApplyPresentation(1, appbasePendingAudio) == appbasePendingAudio) && success;
+    appbasePendingGraphics = appbasePendingAudio = -1;
+    appbasePresentationStatus = success ? 0 : -1;
+}
 extern "C" EMSCRIPTEN_KEEPALIVE int mm_bridge_version() { return 1; }
 extern "C" EMSCRIPTEN_KEEPALIVE int mm_can_save() {
     return g_engine && !g_engine->isPaused() && !g_gui.isActive() &&
@@ -88,7 +152,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE int mm_request_save() {
 }
 extern "C" EMSCRIPTEN_KEEPALIVE int mm_save_status() { return appbaseOperationStatus; }
 extern "C" EMSCRIPTEN_KEEPALIVE int mm_request_load() {
-    if(!g_scumm || g_scumm->_game.id!=GID_MANIAC || g_scumm->_game.version!=2 ||
+    if(!g_scumm || (g_scumm->_game.id!=GID_MANIAC && g_scumm->_game.id!=GID_ZAK) || g_scumm->_game.version!=2 ||
         g_engine->isPaused() || g_gui.isActive() || appbaseOperationStatus==1) return 0;
     appbaseOperationStatus=1;g_engine->loadGameState(254);return 1;
 }
@@ -636,6 +700,11 @@ bool ScummEngine::saveState(Common::WriteStream *out, bool writeHeader) {
 #ifdef __EMSCRIPTEN__
     // Optional trailer: retain the original SCVM v121 stream and object table.
     // Existing saves without it continue to start with the document at Dave.
+    const int extraCount=appbaseItem(4,0);
+    if(extraCount>0){
+        out->writeUint32BE(MKTAG('A','B','S','I'));out->writeUint32LE(1);out->writeUint32LE(extraCount);
+        for(int i=0;i<extraCount;++i){const int id=appbaseItem(5,i);out->writeUint32LE(id);out->writeUint32LE(appbaseItem(2,id));}
+    }
     if(_game.id==GID_MANIAC && _game.version==2){
         out->writeUint32BE(MKTAG('A','B','M','M'));
         out->writeUint32LE(appbaseManualOwner(0));
@@ -830,6 +899,17 @@ bool ScummEngine::loadState(int slot, bool compat, Common::String &filename) {
 	ser.setVersion(hdr.ver);
 	saveLoadWithSerializer(ser);
 #ifdef __EMSCRIPTEN__
+    // Optional bounded catalog trailer. Ignore unknown IDs from another catalog.
+    // The original v121 VM payload and legacy ABMM footer remain unchanged.
+    if(in->size()-in->pos()>=12){
+        const int64 position=in->pos();
+        if(in->readUint32BE()==MKTAG('A','B','S','I') && in->readUint32LE()==1){
+            const uint32 count=in->readUint32LE();
+            if(count<=32 && in->size()-in->pos()>=count*8){
+                for(uint32 i=0;i<count;++i){const uint32 id=in->readUint32LE(),owner=in->readUint32LE();if(id>=10001 && id<=10032)appbaseItem(3,id,owner);}
+            }else in->seek(position);
+        }else in->seek(position);
+    }
     if(_game.id==GID_MANIAC && _game.version==2){
         int owner=3;
         if(in->size()-in->pos()==8 && in->readUint32BE()==MKTAG('A','B','M','M')){

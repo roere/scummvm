@@ -30,8 +30,8 @@ static bool applying = false, frozen = true;
 static CoopEvent remoteMove;
 static bool predicting = false;
 static int lastRoom = -1, lastMoving = 0;
-static bool lightKnown[54] = {};
-static int roomLight[54] = {};
+static bool lightKnown[256] = {};
+static int roomLight[256] = {};
 static bool mansionEntrySent = false,fridgeHungerSent=false;
 static Common::Array<CoopEvent> conflictSpeech;
 static int conflictStage=0;
@@ -60,10 +60,17 @@ bool ScummEngine::appbaseCoopManualGive(int recipient) {
     emit(21,10001,a->_room,localActor,recipient);
     return true; // Ownership changes only after the canonical server reply.
 }
+bool ScummEngine::appbaseCoopItemGive(int item,int recipient) {
+    if(!localActor)return false;
+    if(_game.id==GID_MANIAC && item==10001)return appbaseCoopManualGive(recipient);
+    Actor *a=_actors[localActor];
+    emit(1,localActor,a->_room,a->getRealPos().x,a->getRealPos().y,a->getFacing(),a->_frame,a->_costume);
+    emit(22,item,a->_room,localActor,recipient);return true;
+}
 bool ScummEngine::appbaseCoopActive() const { return localActor != 0; }
 int ScummEngine::appbaseCoopActor() const { return localActor; }
 int ScummEngine::appbaseCoopPrepare(int operation) {
-	if(_game.id!=GID_MANIAC || _game.version!=2) return 0;
+	if((_game.id!=GID_MANIAC && _game.id!=GID_ZAK) || _game.version!=2) return 0;
 	if(operation==0 || operation==1) { preparatoryFrozen=operation==1;frozen=operation==1;return 1; }
 	if(operation==2 && !localActor && _currentRoom==45 && _scummVars[111]>=3) { pendingIntroStart=true;introAutoHold=true;return 1; }
 	// Join during the original intro: resume its held VM context, without START.
@@ -72,10 +79,24 @@ int ScummEngine::appbaseCoopPrepare(int operation) {
 }
 void ScummEngine::appbaseCoopSeed(uint32 seed) { _rnd.setSeed(seed); }
 bool ScummEngine::appbaseCoopVerb(int verb) const {
-	return !localActor || verb<20 || verb>22 || _scummVars[47+verb-20]!=remoteActor;
+	return _game.id!=GID_MANIAC || !localActor || verb<20 || verb>22 || _scummVars[47+verb-20]!=remoteActor;
 }
 int ScummEngine::appbaseCoopSelect(int actor) {
 	if (!localActor || sceneStage==2) return actor;
+    if(_game.id==GID_ZAK) {
+        // Zak's original SWITCH sentence (script 2), distinct from temporary
+        // EGO writes used by original movies and animal-control puzzles.
+        const bool selection=!applying && _userPut>0 && _currentScript!=0xff &&
+            vm.slot[_currentScript].where==WIO_GLOBAL && vm.slot[_currentScript].number==2 &&
+            VAR(VAR_ACTIVE_VERB)==45 && VAR(VAR_ACTIVE_OBJECT2)==actor && actor>=1 && actor<=4 && appbaseCoopGet(8,actor,0)==1;
+        if(!selection)return actor;
+        if(actor!=localActor && actor!=remoteActor) {
+            Actor *a=_actors[localActor];a->stopActorMoving();
+            emit(1,localActor,a->_room,a->getRealPos().x,a->getRealPos().y,a->getFacing(),a->_frame,a->_costume);
+            emit(6,actor,0);
+        }
+        return localActor;
+    }
 	const bool explicitSelection = !applying && _userPut>0 && selectionInputSlot>=0 &&
 		actor==_scummVars[47+selectionInputSlot] && _currentScript!=0xff &&
 		vm.slot[_currentScript].where==WIO_GLOBAL && vm.slot[_currentScript].number==4;
@@ -93,11 +114,17 @@ bool ScummEngine::appbaseCoopPickup(int obj) {
     if (!localActor) return false;
     if(sceneStage==2 && localActor!=sceneActor)return false;
     if(obj>0 && obj<1024)pendingPickup[obj]=true;
-    emit(2,obj,_roomResource,localActor);
+    const int ego=VAR(VAR_EGO);
+    const bool animal=_game.id==GID_ZAK && ego>=5 && ego<=6 && _actors[ego]->_room==_currentRoom;
+    // The authenticated hero stays behind during the original animal puzzle.
+    // Carry the animal's original data room separately from the seat's pose.
+    emit(2,obj,_game.id==GID_ZAK?_actors[localActor]->_room:_roomResource,localActor,
+         animal?_currentRoom:0,animal?ego:0);
     if(sceneStage==2)return false;
 	return true; // inventory is changed only after the sequencer accepts it
 }
 void ScummEngine::appbaseCoopTape(int var,int value) {
+    if(_game.id!=GID_MANIAC)return;
     // Plant growth and sedation also control the original climbing walkbox.
     // Report only original watering/Pepsi writes, not arbitrary scene globals.
     if(localActor && !applying && _roomResource==27 &&
@@ -114,8 +141,8 @@ void ScummEngine::appbaseCoopTape(int var,int value) {
         emit(19,var,_roomResource,value,localActor);
 }
 void ScummEngine::appbaseCoopState(int obj,int state) {
-	if (localActor && !applying && (sceneStage!=2 || localActor==sceneActor) && !presentationObject(obj) && _objectStateTable[obj] != state)
-		emit(3,obj,_roomResource>0?_roomResource:_actors[localActor]->_room,state);
+	if (localActor && !applying && (sceneStage!=2 || localActor==sceneActor) && (_game.id!=GID_MANIAC || !presentationObject(obj)) && _objectStateTable[obj] != state)
+		emit(3,obj,_game.id==GID_ZAK?_currentRoom:(_roomResource>0?_roomResource:_actors[localActor]->_room),state);
 }
 bool ScummEngine::appbaseCoopWalk(int actor,int room,int x,int y,int dir) {
 	if (!localActor || applying || sceneStage==2) return true;
@@ -129,9 +156,13 @@ bool ScummEngine::appbaseCoopWalk(int actor,int room,int x,int y,int dir) {
 bool ScummEngine::appbaseCoopTransfer(int object,int owner) {
 	if (!localActor || applying || object<=0 || object>=_numGlobalObjects) return false;
 	int from=getOwner(object);
+    const int ego=VAR(VAR_EGO);
+    const int candidate=ego>=5 && ego<=6?ego:from;
+    const int animal=_game.id==GID_ZAK && candidate>=5 && candidate<=6 &&
+        getOwner(55)==localActor?candidate:0;
     auto consume=[&](){
         int usage=0,before=0,drank=0;
-        if(owner==0 && VAR(VAR_ACTIVE_OBJECT2)==14 && _currentScript!=0xff && vm.slot[_currentScript].where==WIO_GLOBAL){
+        if(_game.id==GID_MANIAC && owner==0 && VAR(VAR_ACTIVE_OBJECT2)==14 && _currentScript!=0xff && vm.slot[_currentScript].where==WIO_GLOBAL){
             const int script=vm.slot[_currentScript].number;
             if(script==103 || script==104){
                 usage=script==103?(_scummVars[123]==198?3:1):2;
@@ -139,7 +170,8 @@ bool ScummEngine::appbaseCoopTransfer(int object,int owner) {
                 drank=_scummVars[99]?1:0;
             }
         }
-        emit(7,object,_roomResource,localActor,owner,usage,before,drank);
+        emit(7,object,_game.id==GID_ZAK?_actors[localActor]->_room:_roomResource,localActor,owner,
+             animal?animal:usage,animal?_currentRoom:before,drank);
     };
     // pickupObject can be followed immediately by setOwner in one original
     // script (radio batteries are stored inside the picked-up radio). The
@@ -153,11 +185,22 @@ bool ScummEngine::appbaseCoopTransfer(int object,int owner) {
         if(localActor==sceneActor && from==localActor && (owner==0 || owner==14 || owner==OF_OWNER_ROOM))consume();
         return false;
     }
+    // Original animal control disables SWITCH (global199), but still permits
+    // giving an item back to the hero standing in the same original room.
+    if(animal && from==animal && owner>=1 && owner<=4 && _actors[owner]->_room==_currentRoom) {
+        Actor *a=_actors[localActor];
+        emit(1,localActor,a->_room,a->getRealPos().x,a->getRealPos().y,a->getFacing(),a->_frame,a->_costume);
+        emit(5,object,a->_room,localActor,owner,animal,_currentRoom);
+        return true;
+    }
+    if(animal && from==animal && (owner==0 || owner==14 || owner==OF_OWNER_ROOM)) {
+        consume();return false;
+    }
     // Original v2 uses owner 14 to store a record on the Victrola or a tape
     // inside the recorder. Taking it back is an original inventory ownership
     // opcode, not pickupObject; route that through the same canonical grant.
-    if(from==14 && owner==localActor){emit(2,object,_roomResource,localActor);return true;}
-	if (from==localActor && owner==remoteActor) {
+    if(from==14 && owner==localActor){emit(2,object,_game.id==GID_ZAK?_actors[localActor]->_room:_roomResource,localActor);return true;}
+	if (from==localActor && (owner==remoteActor || (_game.id==GID_ZAK && owner>=1 && owner<=4 && owner!=localActor && appbaseCoopGet(8,owner,0)==1))) {
 		Actor *a=_actors[localActor];
 		emit(1,localActor,a->_room,a->getRealPos().x,a->getRealPos().y,a->getFacing(),a->_frame,a->_costume);
 		emit(5,object,a->_room,localActor,owner);
@@ -177,7 +220,7 @@ void ScummEngine::appbaseCoopSound(int sound,int operation) {
 }
 bool ScummEngine::appbaseCoopSceneRunning() const { return sceneStage==2; }
 bool ScummEngine::appbaseCoopSceneBegin() {
-    if(!localActor || _currentScript==0xff || vm.slot[_currentScript].where!=WIO_GLOBAL) return false;
+    if(_game.id!=GID_MANIAC || !localActor || _currentScript==0xff || vm.slot[_currentScript].where!=WIO_GLOBAL) return false;
     const int script=vm.slot[_currentScript].number;
     const int offset=_scriptPointer-_scriptOrgPointer-1;
     // A second original scene may reach its entry in the same VM frame as
@@ -217,7 +260,7 @@ int ScummEngine::appbaseCoopSceneCommand(int operation,int script,int offset,int
     return 0;
 }
 int ScummEngine::appbaseCoopLight(int flags) {
-	if (!localActor || applying || sceneStage!=0 || _currentRoom<=0 || _currentRoom>=54) return flags;
+	if (!localActor || applying || sceneStage!=0 || _currentRoom<=0 || _currentRoom>=(_game.id==GID_ZAK?256:54)) return flags;
 	Actor *a=_actors[localActor];
 	// Story scenes can load a different room while the controlled kid stays put.
 	// They must not publish a fictional player pose or that room's light default.
@@ -229,15 +272,23 @@ int ScummEngine::appbaseCoopLight(int flags) {
 	return flags;
 }
 int ScummEngine::appbaseCoopGet(int kind,int id,int field) {
-	if (_game.id != GID_MANIAC || _game.version != 2) return -1;
+	if ((_game.id != GID_MANIAC && _game.id != GID_ZAK) || _game.version != 2) return -1;
+    // Original Zak SWITCH availability: scripts 4/19 gate the verb with
+    // global 199 and state04 of object 169; per-actor bit 1470 disables a kid.
+    if(kind==8 && _game.id==GID_ZAK && id>=1 && id<=4){
+        const int bit=1470+id;
+        return _scummVars[199]!=0 && (getState(169)&kObjectStateLocked)!=0 &&
+            (_scummVars[bit>>4]&(1<<(bit&15)))==0 && _actors[id]->_room>0 ? 1:0;
+    }
+    if(kind==9 && _game.id==GID_ZAK && id>0 && id<=255)return id>127?_resourceMapper[id&127]:id;
     // Read-only UI inventory order for browser acceptance tests. Never mutate
     // the original object table or expose a way to grant an item.
     if(kind==7 && id>=1 && id<=7){
-        const bool manual=id==appbaseManualOwner(0);
-        if(field==0)return getInventoryCount(id)+(manual?1:0);
+        const int extra=appbaseItem(0,id);
+        if(field==0)return getInventoryCount(id)+extra;
         if(field<1)return 0;
-        if(manual && field==1)return 10001;
-        return findInventory(id,field-(manual?1:0));
+        if(field<=extra)return appbaseItem(1,id,field);
+        return findInventory(id,field-extra);
     }
 	if (kind == 0) {
 		switch(field) {
@@ -254,9 +305,10 @@ int ScummEngine::appbaseCoopGet(int kind,int id,int field) {
 		case 20:return preparatoryFrozen;case 21:return _userPut;
 		case 22:return vm.cutScenePtr[0]?vm.slot[vm.cutSceneScript[0]].number:0;
 		case 23:return static_cast<int>(_rnd.getSeed());
-		case 24:return !localActor?(isScriptRunning(120)?120:(isScriptRunning(131)?131:0)):0;
+		case 24:return _game.id==GID_MANIAC && !localActor?(isScriptRunning(120)?120:(isScriptRunning(131)?131:0)):0;
 		case 25:return sceneScript;
         case 26:return appbaseManualOwner(0);
+        case 27:return _roomResource;
 		}
 	}
 	if (kind == 1 && id > 0 && id < _numActors) {
@@ -270,7 +322,7 @@ int ScummEngine::appbaseCoopGet(int kind,int id,int field) {
 	if (kind == 2 && id > 0 && id < _numGlobalObjects) {
 		if(field == 0)return getOwner(id);
 		if(field == 1)return getState(id);
-		if(field == 2)return presentationObject(id)?1:0;
+		if(field == 2)return _game.id==GID_MANIAC && presentationObject(id)?1:0;
 	}
 	if (kind == 3 && id > 0 && id < _numLocalObjects) {
 		const ObjectData &o=_objs[id];
@@ -298,7 +350,7 @@ bool ScummEngine::appbaseCoopTick() {
 	}
 	if (!localActor) {
 		if(pendingIntroStart) { pendingIntroStart=false;preparatoryFrozen=false;doSentence(9,403,0); }
-		const bool introComplete=introAutoHold && !pendingIntroStart && _actors[3]->_room==44 && _userPut>0 && !isScriptRunning(131);
+		const bool introComplete=_game.id==GID_MANIAC && introAutoHold && !pendingIntroStart && _actors[3]->_room==44 && _userPut>0 && !isScriptRunning(131);
 		// The last line outlives script 131. Keep speech running until the
 		// checkpoint is serializable; freezing it earlier deadlocks translated
 		// speech against appbaseTextCanSave(). Ignore player input while draining.
@@ -362,14 +414,14 @@ bool ScummEngine::appbaseCoopTick() {
 				runScript(148,0,0,nullptr);runScript(152,0,0,nullptr);
 			}
 		}
-		if(v[0] == 9 && v[1]>=1 && v[1]<=7 && v[7]>=1 && v[7]<=7 && v[1]!=v[7]) {
+		if(v[0] == 9 && v[1]>=1 && v[1]<=(_game.id==GID_ZAK?4:7) && v[7]>=1 && v[7]<=(_game.id==GID_ZAK?4:7) && v[1]!=v[7]) {
 			bool changed=localActor!=v[1];
 			if(changed) _actors[localActor]->stopActorMoving();
 			if(remoteActor!=v[7]) _actors[remoteActor]->stopActorMoving();
 			localActor=v[1]; remoteActor=v[7]; predicting=false;
 			if(changed) {
 				Actor *a=_actors[localActor];a->stopActorMoving();a->putActor(v[3],v[4],v[2]);a->setDirection(v[5]);
-				VAR(VAR_EGO)=localActor;actorFollowCamera(localActor);
+				VAR(VAR_EGO)=localActor;if(_game.id==GID_ZAK)runScript(19,0,0,nullptr);actorFollowCamera(localActor);
 				lastRoom=-1;lastMoving=0;
 			}
 			redrawVerbs();
@@ -384,9 +436,10 @@ bool ScummEngine::appbaseCoopTick() {
         }
 		if(v[0] == 5) { // initialize/fix local player; each engine keeps its room context
 			VAR(VAR_EGO)=localActor;
+            if(_game.id==GID_ZAK)runScript(19,0,0,nullptr);
 			actorFollowCamera(localActor);
 		}
-		if(v[0] == 1 && v[1] == remoteActor && v[2] > 0 && v[2] < 54) {
+		if(v[0] == 1 && v[1] == remoteActor && v[2] > 0 && v[2] < (_game.id==GID_ZAK?256:54)) {
 			Actor *a=_actors[remoteActor];
 			bool animate=predicting && remoteMove.v[2]==v[2] && v[2]==_currentRoom;
 			if (!animate || a->_room!=v[2] || ABS(a->getRealPos().x-v[3])>4 || ABS(a->getRealPos().y-v[4])>8) {
@@ -397,31 +450,33 @@ bool ScummEngine::appbaseCoopTick() {
 				if(animate) a->startWalkActor(remoteMove.v[3],remoteMove.v[4],remoteMove.v[5]==360?-1:remoteMove.v[5]);
 			}
 		}
-		if(v[0] == 4 && v[1] == remoteActor && v[2] > 0 && v[2] < 54) {
+		if(v[0] == 4 && v[1] == remoteActor && v[2] > 0 && v[2] < (_game.id==GID_ZAK?256:54)) {
 			remoteMove=incoming[i]; predicting=true;
 			Actor *a=_actors[remoteActor];
 			// Walkboxes belong to the visible room. Other rooms use checkpoints.
 			if(a->_room==v[2] && _currentRoom==v[2]) a->startWalkActor(v[3],v[4],v[5]==360?-1:v[5]);
 		}
-		if(v[0] == 8 && v[1]>0 && v[1]<54 && v[2]>=0 && v[2]<=255) {
+		if(v[0] == 8 && v[1]>0 && v[1]<(_game.id==GID_ZAK?256:54) && v[2]>=0 && v[2]<=255) {
 			lightKnown[v[1]]=true; roomLight[v[1]]=v[2];
 			if(_currentRoom==v[1]) { VAR(VAR_CURRENT_LIGHTS)=v[2]; _fullRedraw=true; }
 		}
 		if((v[0] == 2 || v[0] == 3) && v[1] > 0 && v[1] < _numGlobalObjects) {
 			int obj=v[1];
-			if(v[0] == 2 && (v[3] == localActor || v[3] == remoteActor)) {
+			if(v[0] == 2 && (v[3] == localActor || v[3] == remoteActor ||
+                (_game.id==GID_ZAK && (v[3]==5 || v[3]==6)))) {
                 if(obj<1024)pendingPickup[obj]=false;
 				bool present=false;
 				for(int j=0;j<_numInventory;++j)if(_inventory[j] == obj)present=true;
 				// For old bundles verify the object exists before using the normal importer.
-				if(!present && v[2] > 0 && v[2] < 54) {
-					const byte *room=getResourceAddress(rtRoom,v[2]);
+				if(!present && v[2] > 0 && v[2] < (_game.id==GID_ZAK?256:54)) {
+					const int resourceRoom=_game.id==GID_ZAK && v[2]>127?_resourceMapper[v[2]&127]:v[2];
+                    const byte *room=getResourceAddress(rtRoom,resourceRoom);
 					bool found=false;
 					if(room) for(int j=0;j<room[20];++j) {
 						uint offset=READ_LE_UINT16(room+28+2*room[20]+2*j);
 						if(READ_LE_UINT16(room+offset+4) == obj)found=true;
 					}
-					if(found) { addObjectToInventory(obj,v[2]);present=true; }
+					if(found) { addObjectToInventory(obj,resourceRoom);present=true; }
 				}
 				if(present) {
 					_objectOwnerTable[obj]=v[3];
@@ -430,7 +485,7 @@ bool ScummEngine::appbaseCoopTick() {
 				}
 			} else if(v[0] == 3) {
 				_objectStateTable[obj]=v[3];
-                if(obj>=248 && obj<=251)refreshArcade=true;
+                if(_game.id==GID_MANIAC && obj>=248 && obj<=251)refreshArcade=true;
 			}
 			markObjectRectAsDirty(obj);
 			clearDrawObjectQueue();
@@ -488,11 +543,11 @@ bool ScummEngine::appbaseCoopTick() {
 				} else { conflictSpeech.remove_at(0);conflictStage=0; }
 			}
 		}
-        if(!fridgeHungerSent && a->_room==7 && _scummVars[144]==1 && _scummVars[143]==2){
+        if(_game.id==GID_MANIAC && !fridgeHungerSent && a->_room==7 && _scummVars[144]==1 && _scummVars[143]==2){
             emit(1,localActor,a->_room,a->getRealPos().x,a->getRealPos().y,a->getFacing(),a->_frame,a->_costume);
             emit(18,1,a->_room,localActor);fridgeHungerSent=true;
         }
-		if(!mansionEntrySent && _scummVars[138]!=0 && a->_room==10) {
+		if(_game.id==GID_MANIAC && !mansionEntrySent && _scummVars[138]!=0 && a->_room==10) {
 			emit(1,localActor,a->_room,a->getRealPos().x,a->getRealPos().y,a->getFacing(),a->_frame,a->_costume);
 			emit(10,1,a->_room,localActor);mansionEntrySent=true;
 		}
@@ -516,7 +571,7 @@ EMSCRIPTEN_KEEPALIVE int mm_chat_byte(int index,int value) {
     chatText[chatLength++]=value;chatText[chatLength]=0;return 1;
 }
 EMSCRIPTEN_KEEPALIVE int mm_chat_say(int actor,int room,int length) {
-    if(!g_scumm || !localActor || (actor!=localActor && actor!=remoteActor) || room<1 || room>53 || length!=chatLength || length<1 || length>160 || chatSpeech.size()>=8)return 0;
+    if(!g_scumm || !localActor || (actor!=localActor && actor!=remoteActor) || room<1 || room>(g_scumm->_game.id==GID_ZAK?255:53) || length!=chatLength || length<1 || length>160 || chatSpeech.size()>=8)return 0;
     ChatSpeech line;line.actor=actor;line.room=room;line.age=0;memcpy(line.text,chatText,length+1);chatSpeech.push_back(line);chatLength=0;return 1;
 }
 EMSCRIPTEN_KEEPALIVE int mm_coop_scene(int operation,int script,int offset,int actor) {
@@ -525,7 +580,11 @@ EMSCRIPTEN_KEEPALIVE int mm_coop_scene(int operation,int script,int offset,int a
 EMSCRIPTEN_KEEPALIVE int mm_manual_command(int operation) {
     return g_scumm && (operation==0 || operation==1)?g_scumm->appbaseManual(operation):0;
 }
+EMSCRIPTEN_KEEPALIVE int scumm_item_version() { return 1; }
+EMSCRIPTEN_KEEPALIVE int scumm_item_owner(int id,int owner) { return !g_scumm?0:(owner<0?g_scumm->appbaseItem(2,id):g_scumm->appbaseItem(3,id,owner)); }
+EMSCRIPTEN_KEEPALIVE int scumm_item_id(int index) { return g_scumm?g_scumm->appbaseItem(5,index):0; }
 EMSCRIPTEN_KEEPALIVE int mm_coop_version() { return 8; }
+EMSCRIPTEN_KEEPALIVE int scumm_game_id() { return !g_scumm?0:(g_scumm->_game.id==GID_MANIAC?1:(g_scumm->_game.id==GID_ZAK?2:0)); }
 EMSCRIPTEN_KEEPALIVE int mm_coop_prepare(int operation) { if(!g_scumm && operation==1){preparatoryFrozen=true;return 1;}return g_scumm?g_scumm->appbaseCoopPrepare(operation):0; }
 EMSCRIPTEN_KEEPALIVE void mm_coop_seed(unsigned int seed) { if(g_scumm) g_scumm->appbaseCoopSeed(seed); }
 EMSCRIPTEN_KEEPALIVE int mm_coop_skip(int script) {
@@ -539,25 +598,28 @@ EMSCRIPTEN_KEEPALIVE const char *mm_coop_actor_name(int id) {
     return g_scumm ? g_scumm->appbaseCoopName(id) : "";
 }
 EMSCRIPTEN_KEEPALIVE int mm_coop_enable(int actor,int peer) {
-	if(!g_scumm || g_scumm->_game.id != GID_MANIAC || g_scumm->_game.version != 2 || actor<=0 || peer<=0 || actor==peer || actor>=g_scumm->appbaseCoopGet(0,0,3) || peer>=g_scumm->appbaseCoopGet(0,0,3) || g_scumm->appbaseCoopGet(1,actor,0)<=0) return 0;
+	if(!g_scumm || (g_scumm->_game.id != GID_MANIAC && g_scumm->_game.id != GID_ZAK) || g_scumm->_game.version != 2 || actor<=0 || peer<=0 || (g_scumm->_game.id==GID_ZAK && (actor>4 || peer>4 || g_scumm->appbaseCoopGet(8,actor,0)!=1 || g_scumm->appbaseCoopGet(8,peer,0)!=1)) || actor==peer || actor>=g_scumm->appbaseCoopGet(0,0,3) || peer>=g_scumm->appbaseCoopGet(0,0,3) || g_scumm->appbaseCoopGet(1,actor,0)<=0) return 0;
 	memset(pendingPickup,0,sizeof(pendingPickup));
 	selectionInputSlot=-1;localActor=actor; remoteActor=peer; frozen=true; predicting=false; lastRoom=-1; lastMoving=0;
 	mansionEntrySent=g_scumm->appbaseCoopGet(4,138,0)!=0;fridgeHungerSent=g_scumm->appbaseCoopGet(4,144,0)!=0;
 	conflictSpeech.clear();conflictStage=0;chatSpeech.clear();chatLength=0;
 	preparatoryFrozen=false;pendingIntroStart=false;introAutoHold=false;pendingSkipScript=-1;
 	CoopEvent e={{5,0,0,0,0,0,0,0}};incoming.push_back(e);
-    refreshPlant=false;refreshArcade=true;arcadeReplay=-1;
+    refreshPlant=false;refreshArcade=g_scumm->_game.id==GID_MANIAC;arcadeReplay=-1;
     // A legacy shared save may predate canonical plant state. Publish the
     // actual restored globals once; the server merges both seats monotonically.
     const int room=g_scumm->appbaseCoopGet(1,actor,0);
+    if(g_scumm->_game.id==GID_MANIAC){
     const int growth=g_scumm->appbaseCoopGet(4,174,0);
     emit(20,174,room,growth==255?255:MIN(growth,2),actor,1,0);
     emit(20,193,room,g_scumm->appbaseCoopGet(4,193,0)?1:0,actor,1,0);
+    }
 	return 1;
 }
 EMSCRIPTEN_KEEPALIVE void mm_coop_freeze(int value) { frozen=value!=0;if(!localActor)preparatoryFrozen=value!=0; }
 EMSCRIPTEN_KEEPALIVE int mm_coop_receive(int kind,int id,int room,int a,int b,int c,int d,int e) {
     if(kind==21 && (id!=10001 || room!=0 || a<1 || a>7 || b || c || d || e))return 0;
+	if(g_scumm && g_scumm->_game.id==GID_ZAK && (kind==10 || kind==11 || kind==15 || kind==16 || kind==21))return 0;
 	if(!localActor || incoming.size()>=256 || ((kind<1 || kind>4) && kind!=7 && kind!=8 && kind!=9 && kind!=10 && kind!=11 && kind!=14 && kind!=15 && kind!=16 && kind!=21)) return 0;
 	CoopEvent event={{kind,id,room,a,b,c,d,e}};incoming.push_back(event);return 1;
 }

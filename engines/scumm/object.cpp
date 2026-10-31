@@ -1253,8 +1253,7 @@ void ScummEngine::markObjectRectAsDirty(int obj) {
 
 const byte *ScummEngine::getObjOrActorName(int obj) {
 #ifdef __EMSCRIPTEN__
-    if(_game.id==GID_MANIAC && _game.version==2 && obj==10001)
-        return reinterpret_cast<const byte *>(appbaseGerman()?"Nuke'm-Handbuch":"Nuke'm manual");
+    if(const byte *name=appbaseItemName(obj))return name;
 #endif
 	byte *objptr;
 	int i;

@@ -389,16 +389,15 @@ void ScummEngine_v2::checkV2MouseOver(Common::Point pos) {
 int ScummEngine_v2::inventoryCountV2(int owner) {
     int count=getInventoryCount(owner);
 #ifdef __EMSCRIPTEN__
-    if(_game.id==GID_MANIAC && _game.version==2 && owner==appbaseManualOwner(0))++count;
+    count+=appbaseItem(0,owner);
 #endif
     return count;
 }
 int ScummEngine_v2::findInventoryV2(int owner,int index) {
 #ifdef __EMSCRIPTEN__
-    if(_game.id==GID_MANIAC && _game.version==2 && owner==appbaseManualOwner(0)){
-        if(index==1)return 10001;
-        --index;
-    }
+    const int extra=appbaseItem(0,owner);
+    if(index<=extra)return appbaseItem(1,owner,index);
+    index-=extra;
 #endif
     return findInventory(owner,index);
 }

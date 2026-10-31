@@ -113,6 +113,7 @@ using Common::File;
 namespace Scumm {
 #ifdef __EMSCRIPTEN__
 void appbaseSaveLoadFinished(bool success);
+void appbasePresentationTick();
 #endif
 
 // Use g_scumm from error() ONLY
@@ -2020,7 +2021,7 @@ void ScummEngine_v0::resetScumm() {
 void ScummEngine_v2::resetScumm() {
 	ScummEngine_v3::resetScumm();
 #ifdef __EMSCRIPTEN__
-    _appbaseManualOwner=3;_appbaseManualGiving=false;
+    _appbaseManualOwner=3;_appbaseGivingItem=0;appbaseItemsReset();
 #endif
 
 	if (_game.platform == Common::kPlatformNES) {
@@ -2623,6 +2624,7 @@ Common::Error ScummEngine::go() {
 
 		// Run the main loop
 #ifdef __EMSCRIPTEN__
+		appbasePresentationTick();
 		// Presentation updates remain available while the VM and its clock stop.
 		if (isPaused()) appbaseTextTick();
 #endif
