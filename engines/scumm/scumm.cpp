@@ -2860,6 +2860,9 @@ void ScummEngine::scummLoop(int delta) {
 	// to allow one frame time to pass between checkExecVerbs() and runAllScripts().
 	// Several time-based effects (e.g. shaking) depend on this...
 	if (_game.version != 7 || isFTDOSDemo) {
+#ifdef __EMSCRIPTEN__
+        appbasePeerBeforeInput();
+#endif
 		processInput();
 #ifdef __EMSCRIPTEN__
         appbasePeerAfterInput();

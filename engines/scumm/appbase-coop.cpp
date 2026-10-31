@@ -48,7 +48,8 @@ static int pendingSkipScript=-1,pendingSkipTicks=0;
 static int peerRole=0,peerFrame=0,peerAck=0,peerFailed=0,peerMusic=0,peerTextSpeed=0;
 static bool peerInFrame=false;
 static Common::Array<CoopEvent> peerQueue,peerRecord,peerInputs,peerSounds,peerRandom,peerChat;
-static CoopEvent peerEnd;
+static CoopEvent peerEnd,peerInput;
+static int peerKeyFlags=0;
 static void peerRecordEvent(int kind,int a=0,int b=0,int c=0,int d=0,int e=0,int f=0) {
     CoopEvent record={{kind,peerFrame,a,b,c,d,e,f}};peerRecord.push_back(record);
 }
@@ -63,6 +64,7 @@ bool ScummEngine::appbasePeerTick(int &delta) {
         if(end<0)return true;
         const CoopEvent start=peerQueue[0],clock=peerQueue[1];
         if(start.v[0]!=23 || clock.v[0]!=24 || start.v[1]!=peerFrame+1 || clock.v[1]!=start.v[1]){peerFailed=1;return true;}
+        peerInput=start;peerKeyFlags=clock.v[5];
         peerFrame=start.v[1];delta=start.v[2];_mouse.x=start.v[3];_mouse.y=start.v[4];
         _leftBtnPressed=start.v[5]&15;_rightBtnPressed=(start.v[5]>>4)&15;
         _keyPressed=Common::KeyState(static_cast<Common::KeyCode>(start.v[6]),start.v[7],clock.v[5]);
@@ -86,11 +88,24 @@ bool ScummEngine::appbasePeerTick(int &delta) {
     }
     peerInFrame=true;return false;
 }
+void ScummEngine::appbasePeerBeforeInput() {
+    if(!peerRole || !peerInFrame)return;
+    // Display/dialog preparation can poll events. Capture the input actually
+    // consumed by processInput, rather than an earlier sample of this frame.
+    if(peerRole==1) {
+        int *v=peerRecord[0].v;
+        const bool ui=_keyPressed.ascii=='+' || _keyPressed.ascii=='-' || _keyPressed.ascii=='[' || _keyPressed.ascii==']' || (_keyPressed.flags&(Common::KBD_CTRL|Common::KBD_ALT|Common::KBD_META));
+        v[3]=MAX(0,int(_mouse.x));v[4]=MAX(0,int(_mouse.y));v[5]=(_leftBtnPressed&15)|((_rightBtnPressed&15)<<4);v[6]=ui?0:_keyPressed.keycode;v[7]=ui?0:_keyPressed.ascii;peerRecord[1].v[5]=_keyPressed.flags;
+    } else {
+        _mouse.x=peerInput.v[3];_mouse.y=peerInput.v[4];_leftBtnPressed=peerInput.v[5]&15;_rightBtnPressed=(peerInput.v[5]>>4)&15;
+        _keyPressed=Common::KeyState(static_cast<Common::KeyCode>(peerInput.v[6]),peerInput.v[7],peerKeyFlags);
+    }
+}
 void ScummEngine::appbasePeerAfterInput() {
     if(!peerRole || !peerInFrame)return;
     // Native settings dialogs belong to the controller's UI. Replicate their
     // completed text-speed setting without opening an unattended peer dialog.
-    if(peerRole==1)peerRecord[1].v[7]=_defaultTextSpeed;
+    if(peerRole==1){setTalkSpeed(_defaultTextSpeed);peerRecord[1].v[7]=_defaultTextSpeed;}
     else {_defaultTextSpeed=peerTextSpeed;setTalkSpeed(peerTextSpeed);if(VAR_CHARINC!=0xff)VAR(VAR_CHARINC)=9-peerTextSpeed;}
 }
 void ScummEngine::appbasePeerMusic() { if(peerRole && peerInFrame && VAR_MUSIC_TIMER!=0xff)VAR(VAR_MUSIC_TIMER)=peerMusic; }
