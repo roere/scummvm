@@ -2274,7 +2274,7 @@ void ScummEngine::playActorSounds() {
 }
 
 bool ScummEngine::isValidActor(int id) const {
-	return id >= 0 && id < _numActors && _actors[id]->_number == id;
+	return id >= 0 && id < _numActors && (!_appbaseExtensions.active() || _appbaseExtensions.isActor(id)) && _actors[id]->_number == id;
 }
 
 Actor *ScummEngine::derefActor(int id, const char *errmsg) const {

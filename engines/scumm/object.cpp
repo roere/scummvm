@@ -281,7 +281,7 @@ void ScummEngine::putClass(int obj, int cls, bool set) {
 	else
 		_classData[obj] &= ~(1 << (cls - 1));
 
-	if (_game.version <= 4 && obj >= 1 && obj < _numActors) {
+	if (_game.version <= 4 && obj >= 1 && (_appbaseExtensions.active() ? objIsActor(obj) : obj < _numActors)) {
 		_actors[obj]->classChanged(cls, set);
 	}
 }
@@ -1627,7 +1627,7 @@ int ScummEngine_v0::actorToObj(int actor) {
 }
 
 bool ScummEngine::objIsActor(int obj) {
-	return obj < _numActors;
+	return _appbaseExtensions.active() ? (obj >= 0 && _appbaseExtensions.isActor(obj)) : obj < _numActors;
 }
 
 int ScummEngine::objToActor(int obj) {

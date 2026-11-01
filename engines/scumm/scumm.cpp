@@ -1432,6 +1432,8 @@ Common::Error ScummEngine::init() {
 	setupScumm(macResourceFile);
 
 	readIndexFile();
+	if (ConfMan.hasKey("appbase_extensions"))
+		_appbaseExtensions.configure(*this, ConfMan.get("appbase_extensions"));
 
 	// Create the debugger now that _numVariables has been set
 	setDebugger(new ScummDebugger(this));

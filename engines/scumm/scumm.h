@@ -22,6 +22,8 @@
 #ifndef SCUMM_SCUMM_H
 #define SCUMM_SCUMM_H
 
+#include "scumm/appbase-extensions.h"
+
 #include "engines/engine.h"
 
 #include "common/endian.h"
@@ -516,6 +518,7 @@ extern const char *const insaneKeymapId;
  * Base class for all SCUMM engines.
  */
 class ScummEngine : public Engine, public Common::Serializable {
+	friend class AppbaseExtensions;
 	friend class ScummDebugger;
 	friend class CharsetRenderer;
 	friend class CharsetRendererClassic;
@@ -528,6 +531,8 @@ class ScummEngine : public Engine, public Common::Serializable {
 	friend class LogicHEBasketball;
 
 public:
+	int appbaseExtensionsInfo(int kind, int id) const;
+	const byte *appbaseCachedScript(int id) const;
 	/* Put often used variables at the top.
 	 * That results in a shorter form of the opcode
 	 * on some architectures. */
@@ -886,6 +891,7 @@ protected:
 	byte _fastMode = 0;
 
 	byte _numActors = 0;
+	AppbaseExtensions _appbaseExtensions;
 	Actor **_actors = nullptr;	// Has _numActors elements
 	Actor **_sortedActors = nullptr;
 

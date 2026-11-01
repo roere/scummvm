@@ -28,6 +28,7 @@
 #include "common/savefile.h"
 #include "common/serializer.h"
 #include "common/system.h"
+#include "common/substream.h"
 #include "common/translation.h"
 
 #include "scumm/actor.h"
@@ -354,9 +355,9 @@ void ScummEngine::requestLoad(int slot) {
 	_saveLoadFlag = 2;		// 2 for load
 }
 
-static bool saveSaveGameHeader(Common::WriteStream *out, SaveGameHeader &hdr) {
+static bool saveSaveGameHeader(Common::WriteStream *out, SaveGameHeader &hdr, uint32 extensionMarker = 0) {
 	hdr.type = MKTAG('S','C','V','M');
-	hdr.size = 0;
+	hdr.size = extensionMarker;
 	hdr.ver = CURRENT_VER;
 
 	out->writeUint32BE(hdr.type);
@@ -694,7 +695,7 @@ bool ScummEngine::saveState(Common::WriteStream *out, bool writeHeader) {
 
 	if (writeHeader) {
 		Common::strlcpy(hdr.name, _saveLoadDescription.c_str(), sizeof(hdr.name));
-		saveSaveGameHeader(out, hdr);
+		saveSaveGameHeader(out, hdr, _appbaseExtensions.active() ? MKTAG('A','B','E','X') : 0);
 	}
 #if !defined(__DS__) && !defined(__N64__)
 	if (isUsingOriginalGUI() && _mainMenuIsActive) {
@@ -721,6 +722,7 @@ bool ScummEngine::saveState(Common::WriteStream *out, bool writeHeader) {
         out->writeUint32LE(appbaseManualOwner(0));
     }
 #endif
+	_appbaseExtensions.saveIdentity(*out);
 	return true;
 }
 
@@ -766,15 +768,22 @@ bool ScummEngine::loadState(int slot, bool compat) {
 }
 
 bool ScummEngine::loadState(int slot, bool compat, Common::String &filename) {
-#ifdef __EMSCRIPTEN__
-	appbaseTextReset();
-#endif
 	SaveGameHeader hdr;
 	int sb, sh;
 
 	Common::SeekableReadStream *in = openSaveFileForReading(slot, compat, filename);
 	if (!in)
 		return false;
+	if (!_appbaseExtensions.acceptsSave(*in)) {
+		warning("Savegame belongs to a different extension variant or actor layout");
+		delete in;
+		return false;
+	}
+	if (_appbaseExtensions.active())
+		in = new Common::SeekableSubReadStream(in, 0, in->size() - 44, DisposeAfterUse::YES);
+#ifdef __EMSCRIPTEN__
+	appbaseTextReset();
+#endif
 
 	if (!loadSaveGameHeader(in, hdr)) {
 		warning("Invalid savegame '%s'", filename.c_str());

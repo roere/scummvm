@@ -716,6 +716,8 @@ int ScummEngine::loadResource(ResType type, ResId idx) {
 	_fileHandle->read(_res->createResource(type, idx, size), size);
 
 	applyWorkaroundIfNeeded(type, idx);
+	if (type == rtScript)
+		_appbaseExtensions.applyScript(*this, idx);
 
 	// NB: The workaround may have changed the resource size, so don't rely on 'size' after this.
 
