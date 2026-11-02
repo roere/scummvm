@@ -2014,6 +2014,7 @@ void ScummEngine::resetScumm() {
 		_actionMap[i] = false;
 
 	_lastSaveTime = _system->getMillis();
+	_appbaseExtensions.initializeActors(*this);
 }
 
 void ScummEngine_v0::resetScumm() {
@@ -3011,6 +3012,7 @@ load_game:
 		drawDirtyScreenParts();
 	} else {
 		walkActors();
+		appbaseExtensionTick();
 		moveCamera();
 		updateObjectStates();
 		if (_game.version > 3)
@@ -3999,6 +4001,7 @@ void ScummEngine::restart() {
 		clearOwnerOf(i);
 
 	readIndexFile();
+	_appbaseExtensions.restoreResourceDirectory(*this);
 
 	// Reinit scumm variables
 	resetScumm();

@@ -499,7 +499,9 @@ void ScummEngine_v2::writeVar(uint var, int value) {
 	}
 
 #ifdef __EMSCRIPTEN__
-	if (appbaseCoopActive() && var == VAR_EGO) value=appbaseCoopSelect(value);
+	// The shared-controller phase has no independent localActor yet.
+    // The selector itself preserves every unmodified/non-party EGO write.
+    if (var == VAR_EGO) value=appbaseCoopSelect(value);
 	appbaseCoopTape(var,value);
 #endif
 	_scummVars[var] = value;
@@ -1455,6 +1457,11 @@ void ScummEngine_v2::o2_loadRoomWithEgo() {
 	obj = getVarOrDirectWord(PARAM_1);
 	room = getVarOrDirectByte(PARAM_2);
 
+	// Read the entire opcode before refusing; do not move the actor or load a
+	// target room first. Keep original walkboxes, object scripts and animation.
+	x = (int8)fetchScriptByte();
+	y = (int8)fetchScriptByte();
+	if (!appbaseExtensionRoomAllowed(VAR(VAR_EGO), room)) return;
 	a = derefActor(VAR(VAR_EGO), "o2_loadRoomWithEgo");
 
 	// The original interpreter sets the actors new room X/Y to the last rooms X/Y
@@ -1466,9 +1473,6 @@ void ScummEngine_v2::o2_loadRoomWithEgo() {
 		a->putActor(0, 0, room);
 	}
 	_egoPositioned = false;
-
-	x = (int8)fetchScriptByte();
-	y = (int8)fetchScriptByte();
 
 	startScene(a->_room, a, obj);
 
@@ -1618,6 +1622,7 @@ void ScummEngine_v2::o2_beginOverride() {
 
 void ScummEngine_v2::o2_chainScript() {
 	int script = getVarOrDirectByte(PARAM_1);
+	_appbaseExtensions.chainContext(_currentScript);
 	stopScript(vm.slot[_currentScript].number);
 	_currentScript = 0xFF;
 	runScript(script, 0, 0, nullptr);
@@ -1666,7 +1671,7 @@ void ScummEngine_v2::appbaseItemsReset() {
         const int id=EM_ASM_INT({return Module.scummItems[$0]?.id||0;},i);
         const int owner=EM_ASM_INT({return Module.scummItems[$0]?.owner||0;},i);
         const int maxActor=_game.id==GID_ZAK?4:7;
-        if(id<10001 || id>10032 || owner<0 || owner>maxActor || appbaseItemName(id))continue;
+        if(id<10001 || id>10032 || owner<0 || (owner>maxActor && !_appbaseExtensions.partyActor(owner)) || appbaseItemName(id))continue;
         AppbaseItem &item=_appbaseItems[_appbaseItemCount++];item.id=id;item.owner=owner;
         EM_ASM({const name=String(Module.scummItems[$0]?.name||'');let n=0;for(;n<80 && n<name.length;++n){const code=name.charCodeAt(n);HEAPU8[$1+n]=code>=32&&code<=255?code:63;}HEAPU8[$1+n]=0;},i,item.name);
     }
@@ -1690,8 +1695,8 @@ int ScummEngine_v2::appbaseItem(int operation,int id,int value) {
         if((operation==0 || operation==1) && item.owner==id && id>0){if(operation==1 && ++count==value)return item.id;if(operation==0)++count;}
         if(item.id==id){
             if(operation==2)return item.owner;
-            if(operation==3 && value>=0 && value<=(_game.id==GID_ZAK?4:7)){
-                if(item.owner!=value){item.owner=value;_appbaseGivingItem=0;_inventoryOffset=0;_completeScreenRedraw=true;_fullRedraw=true;}return 1;
+            if(operation==3 && value>=0 && (value<=(_game.id==GID_ZAK?4:7) || _appbaseExtensions.partyActor(value))){
+                if(item.owner!=value){item.owner=value;_appbaseGivingItem=0;_inventoryOffset=0;redrawV2Inventory();}return 1;
             }
         }
     }
@@ -1708,9 +1713,9 @@ bool ScummEngine_v2::appbaseManualInput(int area,int value) {
     if(_appbaseGivingItem){
         if(ego==appbaseItem(2,_appbaseGivingItem) && VAR(VAR_SENTENCE_VERB)==kVerbGive && area==kSceneClickArea){
             const int recipient=getActorFromPos(_virtualMouse.x,_virtualMouse.y);
-            const bool selected=_game.id==GID_ZAK?(recipient>=1 && recipient<=4):
+            const bool selected=_game.id==GID_ZAK?appbasePartyActor(recipient):
                 (recipient==_scummVars[47] || recipient==_scummVars[48] || recipient==_scummVars[49]);
-            if(recipient>=1 && recipient<=(_game.id==GID_ZAK?4:7) && recipient!=ego && selected &&
+            if(recipient>=1 && (recipient<=(_game.id==GID_ZAK?4:7) || _appbaseExtensions.partyActor(recipient)) && recipient!=ego && selected &&
                _actors[recipient]->_room==_currentRoom && _actors[ego]->_room==_currentRoom){
                 if(!appbaseCoopItemGive(_appbaseGivingItem,recipient))appbaseItem(3,_appbaseGivingItem,recipient);
                 _appbaseGivingItem=0;resetSentence();drawSentence();

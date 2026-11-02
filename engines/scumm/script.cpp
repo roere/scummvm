@@ -104,6 +104,7 @@ void ScummEngine::runScript(int script, bool freezeResistant, bool recursive, in
 	s->delayFrameCount = 0;
 	s->cycle = cycle;
 
+	_appbaseExtensions.scriptContext(*this, slot);
 	initializeLocals(slot, lvarptr);
 
 	runScriptNested(slot);
@@ -151,6 +152,7 @@ void ScummEngine::runObjectScript(int object, int entry, bool freezeResistant, b
 	s->delayFrameCount = 0;
 	s->cycle = cycle;
 
+	_appbaseExtensions.scriptContext(*this, slot, object, (freezeResistant || recursive) ? 0 : entry);
 	initializeLocals(slot, vars);
 
 	runScriptNested(slot);
@@ -1218,8 +1220,10 @@ void ScummEngine::checkAndRunSentenceScript() {
 		}
 	}
 	_currentScript = 0xFF;
-	if (sentenceScript)
+	if (sentenceScript) {
+		_appbaseExtensions.sentenceContext(*this);
 		runScript(sentenceScript, 0, 0, localParamList);
+	}
 }
 
 void ScummEngine_v0::walkToActorOrObject(int object) {

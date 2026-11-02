@@ -532,6 +532,16 @@ class ScummEngine : public Engine, public Common::Serializable {
 
 public:
 	int appbaseExtensionsInfo(int kind, int id) const;
+	bool appbaseExtensionRoomAllowed(int actor, int room);
+	unsigned appbaseExtensionScale(unsigned actor) const;
+	void appbaseExtensionTick();
+	int appbaseCommitEncounter(unsigned index);
+#ifdef __EMSCRIPTEN__
+	bool appbaseRequestEncounter(unsigned index, unsigned room, unsigned actor, unsigned other, bool send);
+	bool appbaseRequestObjectReaction(unsigned index, unsigned room, unsigned actor, unsigned object, unsigned verb, unsigned before, unsigned after);
+#endif
+	bool appbasePartyActor(int id) const;
+	bool appbasePartyActorAvailable(int id);
 	const byte *appbaseCachedScript(int id) const;
 	/* Put often used variables at the top.
 	 * That results in a shorter form of the opcode
@@ -603,6 +613,7 @@ public:
     bool appbaseCoopSceneRunning() const;
     int appbaseCoopSceneCommand(int operation,int script,int offset,int actor);
 	int appbaseCoopSelect(int actor);
+    int appbasePartyMenu(int operation,int a,int b);
 	bool appbaseCoopVerb(int verb) const;
 	int appbaseCoopPrepare(int operation);
 	void appbaseCoopSeed(uint32 seed);

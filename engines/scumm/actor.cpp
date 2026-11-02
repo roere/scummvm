@@ -2140,6 +2140,7 @@ int ScummEngine::getActorFromPos(int x, int y) {
 			}
 		}
 
+		if (appbaseExtensionScale(i) != 100) { y1 = _actors[i]->_top; y2 = _actors[i]->_bottom; }
 		if (testGfxUsageBit(x / 8, i) && !getClass(i, kObjectClassUntouchable) && y >= y1 && y <= y2)
 			return i;
 	}
@@ -2564,6 +2565,11 @@ void Actor::prepareDrawActorCostume(BaseCostumeRenderer *bcr) {
 		bcr->_scaleY = _scaley;
 	}
 
+	const unsigned extensionScale = _vm->appbaseExtensionScale(_number);
+	if (extensionScale != 100) {
+		bcr->_scaleX = MAX(1, int(bcr->_scaleX) * int(extensionScale) / 100);
+		bcr->_scaleY = MAX(1, int(bcr->_scaleY) * int(extensionScale) / 100);
+	}
 	bcr->_shadowMode = _shadowMode;
 	if (_vm->_game.version >= 5 && _vm->_game.heversion == 0) {
 		bcr->_shadowTable = _vm->_shadowPalette;
@@ -3878,6 +3884,10 @@ bool Actor::isPlayer() {
 bool Actor_v2::isPlayer() {
 	// isPlayer() is not supported by v0
 	assert(_vm->_game.version != 0);
+	// V1/V2 game variables describe only the original player-ID interval.
+	// Explicitly playable extension actors obey the same player walkbox flags.
+	if (_vm->appbaseExtensionsInfo(10, _number) == 1)
+		return true;
 	// MM V1 PC uses VAR_EGO and not VARS 42 / 43. ZAK V1 does already have VARS 42 / 43 here.
 	// For MM NES I do not have a disasm and the room I used to test it (MM room 24) also has
 	// different box flags in the NES version, so it will not even call into this function.

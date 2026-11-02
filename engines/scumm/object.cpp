@@ -323,7 +323,9 @@ void ScummEngine::putState(int obj, int state) {
 #ifdef __EMSCRIPTEN__
 	appbaseCoopState(obj,state);
 #endif
+	const unsigned previousState = _objectStateTable[obj];
 	_objectStateTable[obj] = state;
+	_appbaseExtensions.objectChanged(*this, obj, previousState, state);
 }
 
 int ScummEngine::getObjectRoom(int obj) const {

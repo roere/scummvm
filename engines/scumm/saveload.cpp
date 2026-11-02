@@ -779,8 +779,10 @@ bool ScummEngine::loadState(int slot, bool compat, Common::String &filename) {
 		delete in;
 		return false;
 	}
-	if (_appbaseExtensions.active())
-		in = new Common::SeekableSubReadStream(in, 0, in->size() - 44, DisposeAfterUse::YES);
+	if (_appbaseExtensions.active()) {
+		_appbaseExtensions.readState(*in, true); // Already validated before any VM mutation.
+		in = new Common::SeekableSubReadStream(in, 0, in->size() - 44 - _appbaseExtensions.stateTrailerSize(), DisposeAfterUse::YES);
+	}
 #ifdef __EMSCRIPTEN__
 	appbaseTextReset();
 #endif

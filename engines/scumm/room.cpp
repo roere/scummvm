@@ -40,6 +40,9 @@ namespace Scumm {
  * The actor is placed next to the object indicated by objectNr.
  */
 void ScummEngine::startScene(int room, Actor *a, int objectNr) {
+	// Restrict actual actor transitions, not a movie displaying another room.
+	// Unmodified games and original actors always take the unchanged path.
+	if (a && !appbaseExtensionRoomAllowed(a->_number, room)) return;
 	int i, where;
 
 	debugC(DEBUG_GENERAL, "Loading room %d", room);

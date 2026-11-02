@@ -651,6 +651,7 @@ int ScummEngine::loadResource(ResType type, ResId idx) {
 		return 1;
 	}
 
+	if (type == rtCostume && _appbaseExtensions.loadCostume(*this, idx)) return 1;
 	roomNr = getResourceRoomNr(type, idx);
 
 	if (idx >= _res->_types[type].size())

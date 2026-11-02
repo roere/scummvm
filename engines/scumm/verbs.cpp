@@ -541,6 +541,10 @@ void ScummEngine::redrawVerbs() {
 }
 
 void ScummEngine::handleMouseOver(bool updateInventory) {
+#ifdef __EMSCRIPTEN__
+    const int partyHover=appbasePartyMenu(4,0,0);
+    if(partyHover>=0){verbMouseOver(partyHover);return;}
+#endif
 	if (_completeScreenRedraw) {
 		verbMouseOver(0);
 	} else {
