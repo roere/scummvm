@@ -1353,6 +1353,14 @@ Common::Error ScummEngine::init() {
 		}
 	}
 
+ // Rendering alone uses a denser surface; all VM dimensions remain logical.
+ const int renderScale = ConfMan.hasKey("appbase_render_scale") ? ConfMan.getInt("appbase_render_scale") : 1;
+ if (renderScale != 1 && (_game.version != 2 || _game.platform != Common::kPlatformAmiga ||
+     (_game.id != GID_ZAK && _game.id != GID_MANIAC) || _textSurfaceMultiplier != 1 ||
+     _screenWidth != 320 || _screenHeight != 200 || _bytesPerPixel != 1 ||
+     (_renderMode != Common::kRenderDefault && _renderMode != Common::kRenderAmiga)))
+  error("AppBase render scale currently requires original SCUMM v2 Amiga graphics");
+ _appbaseRender.configure(renderScale, ConfMan.hasKey("appbase_hd_costumes") ? ConfMan.get("appbase_hd_costumes") : Common::String());
 	// Initialize backend
 	if (_renderMode == Common::kRenderHercA || _renderMode == Common::kRenderHercG) {
 		initGraphics(kHercWidth, kHercHeight);
@@ -1361,6 +1369,8 @@ Common::Error ScummEngine::init() {
 	} else {
 		int screenWidth = _screenWidth;
 		int screenHeight = _screenHeight;
+        screenWidth *= _appbaseRender.scale();
+        screenHeight *= _appbaseRender.scale();
 
 		if (_macScreen && _game.platform == Common::kPlatformMacintosh && _game.version >= 3 && _game.heversion == 0) {
 			screenWidth *= 2;

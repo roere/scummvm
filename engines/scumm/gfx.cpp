@@ -333,6 +333,7 @@ void GdiV2::roomChanged(byte *roomptr) {
 
 
 void ScummEngine::initScreens(int b, int h) {
+    _appbaseRender.reset();
 	int i;
 	int adj = 0;
 
@@ -782,7 +783,7 @@ void ScummEngine::drawStripToScreen(VirtScreen *vs, int x, int width, int top, i
 					memset(blackbuf, 0, 16 * 240); // Prepare a buffer 16px wide and 240px high, to fit on a lateral strip
 
 					width = 240; // Fix right strip
-					_system->copyRectToScreen(blackbuf, 16, 0, 0, 16, 240); // Fix left strip
+					appbaseRenderCopy(blackbuf, 16, 0, 0, 16, 240); // Fix left strip
 				}
 			}
 		} else if (_useCJKMode && m == 2) {
@@ -807,7 +808,7 @@ void ScummEngine::drawStripToScreen(VirtScreen *vs, int x, int width, int top, i
 		mac_drawBufferToScreen((const byte *)src, pitch, x, y, width, height);
 	} else {
 		// Finally blit the whole thing to the screen
-		_system->copyRectToScreen(src, pitch, x, y, width, height);
+		appbaseRenderCopy(src, pitch, x, y, width, height, vs->number == kMainVirtScreen);
 	}
 }
 
@@ -4742,7 +4743,7 @@ void ScummEngine::dissolveEffect(int width, int height) {
 				src = ditherVGAtoEGA(pitch, x, y, wd, ht);
 			}
 
-			_system->copyRectToScreen(src, pitch, x, y, wd, ht);
+			appbaseRenderCopy(src, pitch, x, y, wd, ht);
 		}
 
 		// Test for 1x1 pattern...
@@ -4824,7 +4825,7 @@ void ScummEngine::scrollEffect(int dir) {
 				if (_macScreen) {
 					mac_drawBufferToScreen(src, vsPitch, 0, (vs->h - step), vs->w, step, false);
 				} else {
-					_system->copyRectToScreen(src,
+					appbaseRenderCopy(src,
 											  vsPitch * m,
 											  0, (vs->h - step) * m,
 											  vs->w * m, step * m);
@@ -4851,7 +4852,7 @@ void ScummEngine::scrollEffect(int dir) {
 				if (_macScreen) {
 					mac_drawBufferToScreen(src, vsPitch, 0, 0, vs->w, step, false);
 				} else {
-					_system->copyRectToScreen(src,
+					appbaseRenderCopy(src,
 											  vsPitch * m,
 											  0, 0,
 											  vs->w * m, step * m);
@@ -4877,7 +4878,7 @@ void ScummEngine::scrollEffect(int dir) {
 				if (_macScreen) {
 					mac_drawBufferToScreen(src, vsPitch, (vs->w - step), 0, step, vs->h, false);
 				} else {
-					_system->copyRectToScreen(src, vsPitch * m, (vs->w - step) * m, 0, step * m, vs->h * m);
+					appbaseRenderCopy(src, vsPitch * m, (vs->w - step) * m, 0, step * m, vs->h * m);
 				}
 			}
 			waitForTimer(delay, true);
@@ -4899,7 +4900,7 @@ void ScummEngine::scrollEffect(int dir) {
 				if (_macScreen) {
 					mac_drawBufferToScreen(src, vsPitch, 0, 0, step, vs->h, false);
 				} else {
-					_system->copyRectToScreen(src, vsPitch * m, 0, 0, step * m, vs->h * m);
+					appbaseRenderCopy(src, vsPitch * m, 0, 0, step * m, vs->h * m);
 				}
 			}
 
@@ -4945,7 +4946,7 @@ void ScummEngine::updateScreenShakeEffect() {
 
 	while (now >= _shakeNextTick) {
 		_shakeFrame = (_shakeFrame + 1) % NUM_SHAKE_POSITIONS;
-		_system->setShakePos(0, -shake_positions[_shakeFrame] * _textSurfaceMultiplier);
+		_system->setShakePos(0, -shake_positions[_shakeFrame] * _textSurfaceMultiplier * _appbaseRender.scale());
 		// In DOTT (and probably all other imuse games) this runs on the imuse timer which is a PIT 0 Timer at 291.304 Hz.
 		// Apparently it is the same timer setting for all sound drivers although it is set up not in the main executable
 		// but inside each respective ims driver during the driver load/init process. The screen shakes update every 8 ticks.

@@ -17,12 +17,24 @@ emmake make -j4
 
 Generated files are scummvm.js and scummvm.wasm. COPY this source tree and the
 COPYING license alongside distributions of those files. The AppBase plugin
-contains the equivalent source archive recipe, 52 sequential patches and pinned
+contains the equivalent source archive recipe, 71 sequential patches and pinned
 before/after SHA256 manifests, plus an installer validating the resulting source
 and binary files:
-https://github.com/roere/AppBase-Plugins-Extra/tree/main/maniac-mansion/tools
+https://github.com/roere/AppBase-Plugins-Extra/tree/feature/scumm-mod-system/maniac-mansion/tools
 
 Patch 052 queues presentation changes on the native engine loop. Graphics modes
 normal, SuperEagle and HQ2x use one SDL surface at 2x. Audio preferences mute
 native mixer categories. Neither setting changes the game's scripts, resources,
 progress, pause state or save format.
+
+Patch 071 adds optional render density (`appbase_render_scale`, integer 1..8)
+for classic Amiga SCUMM v2 Zak and Maniac Mansion. Game logic, positions, virtual
+screens and save coordinates remain at 320x200. Scale 1 uses the original output
+path and does not load HD data. Higher factors upscale original pixels and can
+compose optional indexed costume cels from `appbase_hd_costumes` (ABHD v1).
+Native costume/limb/cel selection, actor ordering, palette and masks still apply.
+The AppBase wrapper passes these settings at engine startup; the figures editor
+can generate both native fallback costumes and HD sidecars at density 2 or 4.
+See the plugin's maniac-mansion/docs/render-scale.md for the binary format and
+verification procedures. The WASM diagnostic exports are _scumm_render_version
+and _scumm_render_get; neither changes the game state.

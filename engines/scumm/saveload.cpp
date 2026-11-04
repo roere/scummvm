@@ -1839,7 +1839,7 @@ void ScummEngine::saveLoadWithSerializer(Common::Serializer &s) {
 		}
 
 		updateCursor();
-		_system->warpMouse(x, y);
+		_system->warpMouse(x * _appbaseRender.scale(), y * _appbaseRender.scale());
 	}
 
 	// Before V61, we re-used the _haveMsg flag to handle "alternative" speech

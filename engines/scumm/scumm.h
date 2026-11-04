@@ -43,6 +43,7 @@
 #include "graphics/palette.h"
 
 #include "scumm/gfx.h"
+#include "scumm/appbase-render.h"
 #include "scumm/detection.h"
 #include "scumm/script.h"
 
@@ -1363,6 +1364,10 @@ protected:
 	uint16 _screenB = 0, _screenH = 0;
 public:
 	int _roomHeight = 0, _roomWidth = 0;
+	AppbaseRender _appbaseRender;
+ void appbaseRenderCopy(const void *src, int pitch, int x, int y, int width, int height, bool stage = false);
+ void appbaseRenderBegin();
+ void appbaseRenderPixel(int x, int y, byte color);
 	int _screenHeight = 0, _screenWidth = 0;
 	VirtScreen _virtscr[4];		// Virtual screen areas
 	CameraData camera;			// 'Camera' - viewport

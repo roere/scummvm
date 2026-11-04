@@ -2,6 +2,7 @@ MODULE := engines/scumm
 
 MODULE_OBJS := \
 	appbase-extensions.o \
+	appbase-render.o \
 	appbase-coop.o \
 	appbase-translation.o \
 	actor.o \

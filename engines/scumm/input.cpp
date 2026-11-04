@@ -231,6 +231,10 @@ void ScummEngine::parseEvent(Common::Event event) {
 
 		_mouse.x = event.mouse.x;
 		_mouse.y = event.mouse.y;
+        if (_appbaseRender.scale() > 1) {
+            _mouse.x /= _appbaseRender.scale();
+            _mouse.y /= _appbaseRender.scale();
+        }
 
 		if (_renderMode == Common::kRenderHercA || _renderMode == Common::kRenderHercG) {
 			_mouse.x -= (kHercWidth - _screenWidth * 2) / 2;

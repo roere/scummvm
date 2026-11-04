@@ -219,6 +219,11 @@ byte ClassicCostumeRenderer::mainRoutine(int xmoveCur, int ymoveCur) {
 
 	}
 
+ if (_vm->_appbaseRender.hasHD())
+  _vm->_appbaseRender.drawCel(_loaded._id, _appbaseLimb, _appbaseCode, _width, _height,
+   compData.x, compData.y, _mirror, _scaleX, _scaleY, _scaleIndexX, _scaleIndexY,
+   compData.scaleTable, _palette, _out, _vm->getMaskBuffer(0, 0, _zbuf), _numStrips,
+   _vm->_virtscr[kMainVirtScreen].xstart & 7);
 	compData.skipWidth = _width;
 	compData.scaleXStep = _mirror ? 1 : -1;
 
@@ -499,6 +504,7 @@ void ClassicCostumeRenderer::proc3(ByleRLEData &compData) {
 							pcolor = _shadowTable[*dst];
 					}
 					*dst = pcolor;
+                    if (_vm->_appbaseRender.hasHD()) _vm->appbaseRenderPixel(compData.x, y, pcolor);
 				}
 				dst += _out.pitch;
 				mask += _numStrips;
@@ -961,7 +967,9 @@ byte ClassicCostumeRenderer::drawLimb(const Actor *a, int limb) {
 				}
 			}
 
+            _appbaseLimb = limb; _appbaseCode = code;
 			byte result = mainRoutine(xmoveCur, ymoveCur);
+            _vm->_appbaseRender.endCel();
 
 			_mirror = mirror;
 			return result;

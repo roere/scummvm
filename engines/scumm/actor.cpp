@@ -3087,6 +3087,7 @@ void ScummEngine_v70he::setActorRedrawFlags() {
 }
 
 void ScummEngine::resetActorBgs() {
+    appbaseRenderBegin();
 	for (int i = 0; i < _gdi->_numStrips; i++) {
 		int strip = _screenStartStrip + i;
 		clearGfxUsageBit(strip, USAGE_BIT_DIRTY);

@@ -83,6 +83,7 @@ class ClassicCostumeRenderer : public BaseCostumeRenderer {
 protected:
 	ClassicCostumeLoader _loaded;
 
+	int _appbaseLimb = 0, _appbaseCode = 0;
 	byte _scaleIndexX;						/* must wrap at 256 */
 	byte _scaleIndexY;
 	uint16 _palette[32];

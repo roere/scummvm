@@ -280,6 +280,13 @@ void ScummEngine::updateCursor() {
 	int hotspotX = _cursor.hotspotX;
 	int hotspotY = _cursor.hotspotY;
 
+ Common::Array<byte> denseCursor;
+ if (_appbaseRender.scale() > 1) {
+  const int scale = _appbaseRender.scale(); denseCursor.resize(width * height * scale * scale);
+  for (int y = 0; y < height * scale; ++y) for (int x = 0; x < width * scale; ++x)
+   denseCursor[y * width * scale + x] = cursor[(y / scale) * width + x / scale];
+  cursor = denseCursor.data(); width *= scale; height *= scale; hotspotX *= scale; hotspotY *= scale;
+ }
 	if (_macScreen && _game.version == 6 && _game.heversion == 0)
 		mac_scaleCursor(cursor, hotspotX, hotspotY, width, height);
 
