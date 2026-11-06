@@ -29,6 +29,10 @@
 
 #include "icons/scummvm.xpm"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
+
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 static const uint32 fullscreenMask = SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_FULLSCREEN;
 #endif
@@ -377,6 +381,12 @@ bool SdlWindow::createOrUpdateWindow(int width, int height, uint32 flags) {
 	// the documentation says it only works on X11 anyway, which means it is
 	// basically worthless. So we'll just try to keep things closeish to the
 	// maximum for now.
+#ifdef __EMSCRIPTEN__
+	// HD canvases retain their pixel resolution. The AppBase wrapper fits their
+	// CSS display size; a desktop/window cap would discard costume detail.
+	const bool appbaseHDCanvas = EM_ASM_INT({ return (Module.mmRenderScale | 0) > 1; });
+	if (!appbaseHDCanvas) {
+#endif
 	Common::Rect desktopRes = getDesktopResolution();
 	if (
 		!fullscreenFlags
@@ -405,6 +415,9 @@ bool SdlWindow::createOrUpdateWindow(int width, int height, uint32 flags) {
 	if (height > desktopRes.bottom) {
 		height = desktopRes.bottom;
 	}
+#ifdef __EMSCRIPTEN__
+	}
+#endif
 
 	if (!_window || oldNonUpdateableFlags != newNonUpdateableFlags) {
 		destroyWindow();

@@ -17,7 +17,7 @@ emmake make -j4
 
 Generated files are scummvm.js and scummvm.wasm. COPY this source tree and the
 COPYING license alongside distributions of those files. The AppBase plugin
-contains the equivalent source archive recipe, 71 sequential patches and pinned
+contains the equivalent source archive recipe, 72 sequential patches and pinned
 before/after SHA256 manifests, plus an installer validating the resulting source
 and binary files:
 https://github.com/roere/AppBase-Plugins-Extra/tree/feature/scumm-mod-system/maniac-mansion/tools
@@ -34,7 +34,13 @@ path and does not load HD data. Higher factors upscale original pixels and can
 compose optional indexed costume cels from `appbase_hd_costumes` (ABHD v1).
 Native costume/limb/cel selection, actor ordering, palette and masks still apply.
 The AppBase wrapper passes these settings at engine startup; the figures editor
-can generate both native fallback costumes and HD sidecars at density 2 or 4.
+can generate both native fallback costumes and HD sidecars at density 2, 3 or 4.
 See the plugin's maniac-mansion/docs/render-scale.md for the binary format and
 verification procedures. The WASM diagnostic exports are _scumm_render_version
 and _scumm_render_get; neither changes the game state.
+
+Patch 072 preserves the full backing-canvas resolution for AppBase HD render
+factors greater than 1. The Emscripten SDL window does not clamp that canvas to
+the reported desktop size; the wrapper fits its CSS display size instead.
+Factor 1 retains the existing desktop/window bounds. This avoids discarding HD
+costume detail when the internal surface exceeds the reported browser display.
