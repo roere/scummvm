@@ -99,9 +99,9 @@ void AppbaseExtensions::configure(ScummEngine &vm, const Common::String &path) {
 		error("Extensions require a separate target named <gameid>-ext-<manifest-md5>");
 	Common::String json((const char *)raw.data(), raw.size());
 	Common::JSONValue *manifest = Common::JSON::parse(json.c_str());
-	if (!manifest || !manifest->isObject() || (number(manifest, "schemaVersion") != 1 && number(manifest, "schemaVersion") != 2 && number(manifest, "schemaVersion") != 3 && number(manifest, "schemaVersion") != 4 && number(manifest, "schemaVersion") != 5) || !token(text(manifest, "variant"))) error("Invalid extension manifest/version");
+	if (!manifest || !manifest->isObject() || (number(manifest, "schemaVersion") != 1 && number(manifest, "schemaVersion") != 2 && number(manifest, "schemaVersion") != 3 && number(manifest, "schemaVersion") != 4 && number(manifest, "schemaVersion") != 5 && number(manifest, "schemaVersion") != 6) || !token(text(manifest, "variant"))) error("Invalid extension manifest/version");
 	const unsigned schema = number(manifest, "schemaVersion");
-	keys(manifest, schema >= 3 ? "schemaVersion,variant,game,extensions,party" : "schemaVersion,variant,game,extensions");
+	keys(manifest, schema >= 6 ? "schemaVersion,variant,game,extensions,party,wardrobeItems" : schema >= 3 ? "schemaVersion,variant,game,extensions,party" : "schemaVersion,variant,game,extensions");
 	Common::JSONValue *game = manifest->child("game");
 	keys(game, "id,version,platform,indexMd5,fingerprint");
 	Common::String id = text(game, "id"), platform = text(game, "platform"), md5 = text(game, "indexMd5");
@@ -307,6 +307,28 @@ void AppbaseExtensions::configure(ScummEngine &vm, const Common::String &path) {
 			}
 		}
 	}
+    if (schema >= 6) {
+        const Common::JSONArray &items = array(manifest, "wardrobeItems");
+        if (vm._game.id != GID_ZAK || items.empty() || items.size() > 16) error("Wardrobes require Zak V2 and a bounded item list");
+        bool usedItems[33] = {}, usedCostumes[256] = {};
+        for (Common::JSONValue *item : items) {
+            keys(item, "id,key,kind,names,initialOwner,wearer,baseCostume,costume,image");
+            const unsigned id = number(item, "id"), wearer = number(item, "wearer"), base = number(item, "baseCostume"), costume = number(item, "costume");
+            if (id < 10003 || id > 10032 || usedItems[id - 10000] || wearer < _originalActors || !isActor(wearer) || number(item, "initialOwner") != wearer || base == costume || !_costumes.contains(base) || !_costumes.contains(costume) || usedCostumes[costume]) error("Invalid wardrobe actor/costume binding");
+            usedItems[id - 10000] = true; usedCostumes[costume] = true;
+            if (text(item, "kind") != "costume" || !token(text(item, "key"))) error("Invalid wardrobe item kind/key");
+            Common::JSONValue *names = item->child("names"); keys(names, "de,en");
+            if (text(names, "de").empty() || text(names, "de").size() > 64 || text(names, "en").empty() || text(names, "en").size() > 64) error("Invalid wardrobe item name");
+            Common::JSONValue *image = item->child("image"); keys(image, "file,bytes,md5,sha256,width,height");
+            const Common::String file = text(image, "file"); if (!token(file)) error("Invalid wardrobe image path");
+            const Common::Array<byte> bytes = read(directory.join(file), 1048576);
+            if (bytes.size() < 33 || bytes.size() != number(image, "bytes") || digest(bytes.data(), bytes.size()) != text(image, "md5") || READ_BE_UINT32(bytes.data()) != 0x89504e47 || READ_BE_UINT32(bytes.data() + 4) != 0x0d0a1a0a || READ_BE_UINT32(bytes.data() + 16) != number(image, "width") || READ_BE_UINT32(bytes.data() + 20) != number(image, "height") || number(image, "width") > 256 || number(image, "height") > 256) error("Invalid wardrobe item image");
+#ifdef __EMSCRIPTEN__
+            const int matches = EM_ASM_INT({const item=(Module.scummItems||[]).find(item=>item.id===$0);return item&&item.wearer===$1&&item.baseCostume===$2&&item.costume===$3?1:0;}, id, wearer, base, costume);
+            if (!matches) error("Runtime wardrobe differs from pinned manifest");
+#endif
+        }
+    }
 	ExtensionV2Limits limits = {_capacity, (unsigned)vm._numRooms, (unsigned)vm._numScripts, (unsigned)vm._numGlobalObjects, costumeCapacity, (unsigned)vm._numVariables, vm.OF_OWNER_ROOM, actorIds, (unsigned)vm._numSounds, roomIds, scriptIds, costumeIds, soundIds};
 	for (uint i = 0; i < extensions.size(); ++i) {
 		const Common::JSONArray &scripts = array(extensions[i], "scripts");
@@ -593,7 +615,7 @@ int ScummEngine::appbaseExtensionsInfo(int kind, int id) const {
 	return _appbaseExtensions.info(kind, id);
 }
 #ifdef __EMSCRIPTEN__
-extern "C" EMSCRIPTEN_KEEPALIVE int scumm_extensions_version() { return 5; }
+extern "C" EMSCRIPTEN_KEEPALIVE int scumm_extensions_version() { return 6; }
 extern "C" EMSCRIPTEN_KEEPALIVE int scumm_extensions_info(int kind, int id) { return g_scumm ? g_scumm->appbaseExtensionsInfo(kind, id) : -1; }
 extern "C" EMSCRIPTEN_KEEPALIVE int scumm_extensions_commit_encounter(int id) { return g_scumm && id >= 0 ? g_scumm->appbaseCommitEncounter(id) : -1; }
 extern "C" EMSCRIPTEN_KEEPALIVE const byte *scumm_extensions_cached_script(int id) { return g_scumm ? g_scumm->appbaseCachedScript(id) : nullptr; }

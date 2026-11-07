@@ -1672,7 +1672,13 @@ void ScummEngine_v2::appbaseItemsReset() {
         const int owner=EM_ASM_INT({return Module.scummItems[$0]?.owner||0;},i);
         const int maxActor=_game.id==GID_ZAK?4:7;
         if(id<10001 || id>10032 || owner<0 || (owner>maxActor && !_appbaseExtensions.partyActor(owner)) || appbaseItemName(id))continue;
-        AppbaseItem &item=_appbaseItems[_appbaseItemCount++];item.id=id;item.owner=owner;
+        AppbaseItem &item=_appbaseItems[_appbaseItemCount++];item.id=id;item.owner=owner;item.wearer=item.baseCostume=item.costume=0;
+        if(_game.id==GID_ZAK){
+            const int wearer=EM_ASM_INT({return Module.scummItems[$0]?.wearer||0;},i);
+            const int base=EM_ASM_INT({return Module.scummItems[$0]?.baseCostume||0;},i);
+            const int costume=EM_ASM_INT({return Module.scummItems[$0]?.costume||0;},i);
+            if(wearer>0 && wearer<_numActors && _appbaseExtensions.isActor(wearer) && base>0 && base<_numCostumes && costume>0 && costume<_numCostumes && base!=costume){item.wearer=wearer;item.baseCostume=base;item.costume=costume;}
+        }
         EM_ASM({const name=String(Module.scummItems[$0]?.name||'');let n=0;for(;n<80 && n<name.length;++n){const code=name.charCodeAt(n);HEAPU8[$1+n]=code>=32&&code<=255?code:63;}HEAPU8[$1+n]=0;},i,item.name);
     }
 }
@@ -1695,8 +1701,19 @@ int ScummEngine_v2::appbaseItem(int operation,int id,int value) {
         if((operation==0 || operation==1) && item.owner==id && id>0){if(operation==1 && ++count==value)return item.id;if(operation==0)++count;}
         if(item.id==id){
             if(operation==2)return item.owner;
+            if(operation==6)return item.wearer;
+            if(operation==7)return item.costume;
+            if(operation==8)return item.baseCostume;
+            if(operation==9 && item.wearer>0 && item.wearer<_numActors && (value==0 || value==1)){
+                Actor *actor=_actors[item.wearer];
+                if(value && item.owner!=item.wearer)return 0;
+                if(!value && actor->_costume!=item.costume)return 1;
+                const int costume=value?item.costume:item.baseCostume;
+                if(actor->_costume!=costume){actor->stopActorMoving();actor->setActorCostume(costume);actor->startAnimActor(actor->_standFrame);_fullRedraw=true;}
+                return 1;
+            }
             if(operation==3 && value>=0 && (value<=(_game.id==GID_ZAK?4:7) || _appbaseExtensions.partyActor(value))){
-                if(item.owner!=value){item.owner=value;_appbaseGivingItem=0;_inventoryOffset=0;redrawV2Inventory();}return 1;
+                if(item.owner!=value){if(item.wearer && item.owner==item.wearer)appbaseItem(9,id,0);item.owner=value;_appbaseGivingItem=0;_inventoryOffset=0;redrawV2Inventory();}return 1;
             }
         }
     }
@@ -1728,6 +1745,16 @@ bool ScummEngine_v2::appbaseManualInput(int area,int value) {
     if(area!=kInventoryClickArea || !appbaseItemName(value))return false;
     if(ego==appbaseItem(2,value) && VAR(VAR_SENTENCE_VERB)==kVerbGive){
         _appbaseGivingItem=value;VAR(VAR_SENTENCE_OBJECT1)=value;VAR(VAR_SENTENCE_OBJECT2)=0;VAR(VAR_SENTENCE_PREPOSITION)=4;drawSentence();return true;
+    }
+    // Zak's original verbs 6/7 are Put on / Take off (MM uses other semantics).
+    if(_game.id==GID_ZAK && appbaseItem(6,value)>0){
+        const int verb=VAR(VAR_SENTENCE_VERB);
+        if(verb==6 || verb==7){
+            const int wearer=appbaseItem(6,value);
+            if(ego!=wearer || appbaseItem(2,value)!=wearer){_actorToPrintStrFor=ego;actorTalk((const byte *)(appbaseGerman()?"Das passt mir nicht.":"That does not fit me."));}
+            else if(!appbaseCoopItemWear(value,verb==6?1:0))appbaseItem(9,value,verb==6?1:0);
+        }
+        resetSentence();drawSentence();return true;
     }
     if(ego==appbaseItem(2,value) && VAR(VAR_SENTENCE_VERB)==kVerbRead)
         EM_ASM({if(Module.scummItemRead)Module.scummItemRead($0);else if($0===10001&&Module.mmManualRead)Module.mmManualRead();},value);

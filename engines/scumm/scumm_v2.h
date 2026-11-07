@@ -56,7 +56,7 @@ public:
     int appbasePeerInventory(int value) { if(value>=0)_inventoryOffset=value;return _inventoryOffset; }
     bool _appbaseManualRetry=false;
     int _appbaseManualOwner=3;
-    struct AppbaseItem { int id,owner; byte name[81]; };
+    struct AppbaseItem { int id,owner,wearer=0,baseCostume=0,costume=0; byte name[81]; };
     AppbaseItem _appbaseItems[32] = {};
     int _appbaseItemCount=0,_appbaseGivingItem=0;
     void appbaseItemsReset();

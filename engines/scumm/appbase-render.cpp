@@ -15,7 +15,7 @@ void AppbaseRender::configure(int scale, const Common::String &path) {
  // The original path neither loads HD artwork nor allocates a render surface.
  if (_scale == 1 || path.empty()) return;
  Common::File f;
- if (!f.open(Common::FSNode(Common::Path(path))) || f.size() < 8 || f.size() > 16777216)
+ if (!f.open(Common::FSNode(Common::Path(path))) || f.size() < 8 || f.size() > 67108864)
   error("Invalid AppBase HD costume file");
  if (f.readUint32BE() != MKTAG('A','B','H','D') || f.readUint16LE() != 1)
   error("Unsupported AppBase HD costume format");

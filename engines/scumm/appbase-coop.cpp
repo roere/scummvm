@@ -260,6 +260,12 @@ bool ScummEngine::appbaseCoopItemGive(int item,int recipient) {
     emit(1,localActor,a->_room,a->getRealPos().x,a->getRealPos().y,a->getFacing(),a->_frame,a->_costume);
     emit(22,item,a->_room,localActor,recipient);return true;
 }
+bool ScummEngine::appbaseCoopItemWear(int item,int worn) {
+    if(!localActor)return false;
+    Actor *actor=_actors[localActor];
+    emit(1,localActor,actor->_room,actor->getRealPos().x,actor->getRealPos().y,actor->getFacing(),actor->_frame,actor->_costume);
+    emit(34,item,actor->_room,localActor,worn);return true;
+}
 bool ScummEngine::appbasePartyActor(int id) const {
     return appbasePartyOriginalActor(_game.id==GID_ZAK,id) || _appbaseExtensions.partyActor(id);
 }
@@ -861,6 +867,7 @@ EMSCRIPTEN_KEEPALIVE int mm_manual_command(int operation) {
 }
 EMSCRIPTEN_KEEPALIVE int scumm_item_version() { return 1; }
 EMSCRIPTEN_KEEPALIVE int scumm_item_owner(int id,int owner) { return !g_scumm?0:(owner<0?g_scumm->appbaseItem(2,id):g_scumm->appbaseItem(3,id,owner)); }
+EMSCRIPTEN_KEEPALIVE int scumm_item_wear(int id,int worn) { return g_scumm?g_scumm->appbaseItem(9,id,worn):0; }
 EMSCRIPTEN_KEEPALIVE int scumm_item_id(int index) { return g_scumm?g_scumm->appbaseItem(5,index):0; }
 EMSCRIPTEN_KEEPALIVE int mm_coop_version() { return 8; }
 EMSCRIPTEN_KEEPALIVE int scumm_game_id() { return !g_scumm?0:(g_scumm->_game.id==GID_MANIAC?1:(g_scumm->_game.id==GID_ZAK?2:0)); }
