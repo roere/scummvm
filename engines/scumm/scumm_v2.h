@@ -64,6 +64,7 @@ public:
     const byte *appbaseItemName(int id) override;
     int appbaseManualOwner(int owner) override;
     bool appbaseManualInput(int clickArea,int value);
+    bool appbaseWardrobeSentence(int verb,int object,int target);
     int appbaseManual(int operation) override;
     int appbaseManualRandom(int maximum,int value) override;
 #endif

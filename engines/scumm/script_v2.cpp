@@ -1727,6 +1727,11 @@ int ScummEngine_v2::appbaseManualOwner(int owner) {
 bool ScummEngine_v2::appbaseManualInput(int area,int value) {
     if(_game.version!=2 || !_appbaseItemCount)return false;
     const int ego=VAR(VAR_EGO);
+    // A different, unsupported verb cancels a selected virtual garment before
+    // the original input script can inspect its nonexistent object resource.
+    if(_game.id==GID_ZAK && area==kVerbClickArea && value!=6 && value!=7 && appbaseItem(6,VAR(VAR_SENTENCE_OBJECT1))>0){
+        VAR(VAR_SENTENCE_OBJECT1)=0;VAR(VAR_SENTENCE_OBJECT2)=0;VAR(VAR_SENTENCE_PREPOSITION)=0;
+    }
     if(_appbaseGivingItem){
         if(ego==appbaseItem(2,_appbaseGivingItem) && VAR(VAR_SENTENCE_VERB)==kVerbGive && area==kSceneClickArea){
             const int recipient=getActorFromPos(_virtualMouse.x,_virtualMouse.y);
@@ -1749,16 +1754,21 @@ bool ScummEngine_v2::appbaseManualInput(int area,int value) {
     // Zak's original verbs 6/7 are Put on / Take off (MM uses other semantics).
     if(_game.id==GID_ZAK && appbaseItem(6,value)>0){
         const int verb=VAR(VAR_SENTENCE_VERB);
-        if(verb==6 || verb==7){
-            const int wearer=appbaseItem(6,value);
-            if(ego!=wearer || appbaseItem(2,value)!=wearer){_actorToPrintStrFor=ego;actorTalk((const byte *)(appbaseGerman()?"Das passt mir nicht.":"That does not fit me."));}
-            else if(!appbaseCoopItemWear(value,verb==6?1:0))appbaseItem(9,value,verb==6?1:0);
-        }
+        if(verb==6 || verb==7)return false; // Original script selects, confirms and queues the sentence.
         resetSentence();drawSentence();return true;
     }
     if(ego==appbaseItem(2,value) && VAR(VAR_SENTENCE_VERB)==kVerbRead)
         EM_ASM({if(Module.scummItemRead)Module.scummItemRead($0);else if($0===10001&&Module.mmManualRead)Module.mmManualRead();},value);
     resetSentence();drawSentence();return true;
+}
+bool ScummEngine_v2::appbaseWardrobeSentence(int verb,int object,int target) {
+    if(_game.id!=GID_ZAK || (appbaseItem(6,object)<=0 && appbaseItem(6,target)<=0))return false;
+    if((verb==6 || verb==7) && target==0){
+        const int wearer=appbaseItem(6,object),ego=VAR(VAR_EGO);
+        if(ego!=wearer || appbaseItem(2,object)!=wearer){_actorToPrintStrFor=ego;actorTalk((const byte *)(appbaseGerman()?"Das passt mir nicht.":"That does not fit me."));}
+        else if(!appbaseCoopItemWear(object,verb==6?1:0))appbaseItem(9,object,verb==6?1:0);
+    }
+    return true; // Virtual garments never enter original object scripts.
 }
 int ScummEngine_v2::appbaseManualRandom(int maximum,int value) {
     if(!_appbaseManualRetry || _game.id!=GID_MANIAC || _game.version!=2 ||
