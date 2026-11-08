@@ -19,6 +19,9 @@
  *
  */
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
 #include "common/config-manager.h"
 #include "common/compression/clickteam.h"
 #include "common/debug-channels.h"
@@ -2637,8 +2640,11 @@ Common::Error ScummEngine::go() {
 #ifdef __EMSCRIPTEN__
         const int peerWait=appbaseSpectatorWait(appbasePeerWait(delta*4));
         waitForTimer(peerWait);
-        // Give incoming messages and browser UI a turn between catch-up frames.
-        if(peerWait==0 && delta>0)_system->delayMillis(1);
+        // Observers process all recorded frames in bounded slices. The player
+        // peer path retains its existing yield between catch-up frames.
+        if(peerWait==0 && (appbaseSpectatorReplay() ?
+            EM_ASM_INT({return Module.scummSpectatorYield?.()!==false;}) : delta>0))
+            _system->delayMillis(1);
 #else
 		waitForTimer(delta * 4);
 #endif
@@ -2702,7 +2708,15 @@ void ScummEngine::waitForTimer(int quarterFrames, bool freezeMacGui) {
 		if (_macGui && !freezeMacGui)
 			_macGui->updateWindowManager();
 
+#ifdef __EMSCRIPTEN__
+        // Only presentation is throttled during observer catch-up. Simulation,
+        // event parsing and logical checksums still run for every tape frame.
+        if (!appbaseSpectatorReplay() || EM_ASM_INT({return Module.scummSpectatorPresent?.()!==false;})) {
+#endif
 		_system->updateScreen();
+#ifdef __EMSCRIPTEN__
+        }
+#endif
 		cur = _system->getMillis();
 
 #ifndef DISABLE_TOWNS_DUAL_LAYER_MODE
