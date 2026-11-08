@@ -95,6 +95,13 @@ void AppbaseExtensions::configure(ScummEngine &vm, const Common::String &path) {
 	const Common::Array<byte> raw = read(Common::Path(path), 262144);
 	validateJsonEnvelope(raw);
 	_identity = digest(raw.data(), raw.size());
+	_saveIdentity = _identity;
+	if (ConfMan.hasKey("appbase_save_identity")) {
+		_saveIdentity = ConfMan.get("appbase_save_identity");
+		if (_saveIdentity.size() != 32) error("Invalid figure save identity");
+		for (uint i = 0; i < _saveIdentity.size(); ++i)
+			if (!strchr("0123456789abcdef", _saveIdentity[i])) error("Invalid figure save identity");
+	}
 	if (vm._targetName != Common::String(vm._game.gameid) + "-ext-" + _identity)
 		error("Extensions require a separate target named <gameid>-ext-<manifest-md5>");
 	Common::String json((const char *)raw.data(), raw.size());
@@ -363,6 +370,26 @@ void AppbaseExtensions::configure(ScummEngine &vm, const Common::String &path) {
 		}
 	}
 	delete manifest;
+	if (ConfMan.hasKey("appbase_figure_binding")) {
+		const Common::Array<byte> bytes = read(Common::Path(ConfMan.get("appbase_figure_binding")), 32768);
+		validateJsonEnvelope(bytes);
+		Common::String bindingJson((const char *)bytes.data(), bytes.size());
+		Common::JSONValue *binding = Common::JSON::parse(bindingJson.c_str());
+		if (!binding || !binding->isArray() || binding->asArray().size() > _initialActors.size()) error("Invalid figure bindings");
+		for (Common::JSONValue *value : binding->asArray()) {
+			keys(value, "actor,baseCostume,activeCostumes");
+			FigureState state; state.actor = number(value, "actor"); state.base = number(value, "baseCostume");
+			bool found = false; for (const InitialActor &a : _initialActors) if (a.id == state.actor && a.costume == state.base) found = true;
+			Common::JSONValue *costumes = value->child("activeCostumes");
+			if (!found || !costumes || !costumes->isArray() || costumes->asArray().empty() || costumes->asArray().size() > 8) error("Invalid figure costume bindings");
+			for (const Common::JSONValue *costume : costumes->asArray()) {
+				if (!costume->isIntegerNumber() || costume->asIntegerNumber() < 0 || costume->asIntegerNumber() > 255 || !_costumes.contains(costume->asIntegerNumber())) error("Invalid figure costume slot");
+				state.costumes.push_back(costume->asIntegerNumber());
+			}
+			_figureStates.push_back(state);
+		}
+		delete binding;
+	}
 	_active = true;
 	vm._numActors = _capacity;
 	restoreResourceDirectory(vm);
@@ -389,7 +416,7 @@ void AppbaseExtensions::saveIdentity(Common::WriteStream &out) const {
 		out.writeUint32BE(MKTAG('A','B','E','V')); out.writeUint32LE(_objectRules ? 2 : 1); out.writeUint32LE(_encounters.size());
 		out.writeUint32LE(_fired); out.writeUint32LE(_pending); out.writeUint32LE(_activeEncounter); out.writeUint32LE(_nextLine); out.writeUint32LE(stateHash());
 	}
-	out.writeUint32BE(MKTAG('A','B','E','X')); out.writeUint32LE(1); out.writeUint32LE(_capacity); out.write(_identity.c_str(), 32);
+	out.writeUint32BE(MKTAG('A','B','E','X')); out.writeUint32LE(1); out.writeUint32LE(_capacity); out.write(_saveIdentity.c_str(), 32);
 }
 bool AppbaseExtensions::acceptsSave(Common::SeekableReadStream &in) const {
 	const int64 position = in.pos();
@@ -398,7 +425,7 @@ bool AppbaseExtensions::acceptsSave(Common::SeekableReadStream &in) const {
 	bool valid = !marked && !_active;
 	if (marked && _active) {
 		uint32 version = in.readUint32LE(), capacity = in.readUint32LE(); char identity[33] = {};
-		valid = in.read(identity, 32) == 32 && version == 1 && capacity == _capacity && _identity == identity;
+		valid = in.read(identity, 32) == 32 && version == 1 && capacity == _capacity && _saveIdentity == identity;
 	}
 	// A header marker makes a missing/truncated trailer rejectable as well.
 	if (in.size() >= 8) { in.seek(4); if (in.readUint32LE() == MKTAG('A','B','E','X') && !marked) valid = false; }
@@ -443,6 +470,27 @@ void AppbaseExtensions::initializeActors(ScummEngine &vm) {
 		a->putActor(initial.x, initial.y, initial.room);
 		a->startAnimActor(a->_standFrame);
 	}
+}
+void AppbaseExtensions::restoreFigureState(ScummEngine &vm) {
+	if (!_active || _figureStates.empty()) return;
+	for (const FigureState &state : _figureStates) {
+		for (const InitialActor &initial : _initialActors) if (initial.id == state.actor) {
+			vm._res->nukeResource(rtActorName, initial.id);
+			vm.loadPtrToResource(rtActorName, initial.id, (const byte *)initial.name.c_str());
+		}
+		Actor *a = vm._actors[state.actor];
+		bool active = false; for (unsigned costume : state.costumes) if (costume == a->_costume) active = true;
+		if (!active) a->_costume = state.base;
+		// Preserve position, walk state and palette; only rebuild animation channels
+		// against the current artwork rather than serialized old frame indices.
+		a->_cost.reset();
+		a->startAnimActor(a->_moving ? a->_walkFrame : a->_standFrame);
+	}
+}
+const char *AppbaseExtensions::figureVerbName(int verb) const {
+	if (_figureStates.empty() || !_partyVerbs.contains(verb)) return nullptr;
+	for (const InitialActor &initial : _initialActors) if (initial.id == (unsigned)_partyVerbs[verb]) return initial.name.c_str();
+	return nullptr;
 }
 int AppbaseExtensions::partyVerbActor(int verb) const {
     if (_partyVerbs.empty()) return -1; // Older manifests retain their exact UI.
@@ -621,3 +669,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE int scumm_extensions_commit_encounter(int id) { 
 extern "C" EMSCRIPTEN_KEEPALIVE const byte *scumm_extensions_cached_script(int id) { return g_scumm ? g_scumm->appbaseCachedScript(id) : nullptr; }
 #endif
 } // namespace Scumm
+
+#ifdef __EMSCRIPTEN__
+extern "C" EMSCRIPTEN_KEEPALIVE int scumm_figure_links_version() { return 1; }
+#endif

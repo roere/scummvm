@@ -15,6 +15,8 @@ public:
 	bool loadCostume(ScummEngine &vm, int id);
 	void restoreResourceDirectory(ScummEngine &vm);
 	void initializeActors(ScummEngine &vm);
+	void restoreFigureState(ScummEngine &vm);
+	const char *figureVerbName(int verb) const;
 	bool acceptsSave(Common::SeekableReadStream &in) const;
 	void saveIdentity(Common::WriteStream &out) const;
 	bool partyActor(unsigned id) const;
@@ -61,7 +63,9 @@ private:
 	unsigned _originalCostumes = 0;
 	bool _active;
 	unsigned _originalActors, _capacity;
-	Common::String _identity;
+	Common::String _identity, _saveIdentity;
+	struct FigureState { unsigned actor, base; Common::Array<unsigned> costumes; };
+	Common::Array<FigureState> _figureStates;
 	Common::Array<unsigned> _actors;
 	Common::HashMap<int, Script> _scripts;
 };

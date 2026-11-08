@@ -5,6 +5,7 @@
 #include <emscripten/emscripten.h>
 #include "scumm/appbase-party-profile.h"
 #include "common/array.h"
+#include "common/serializer.h"
 #include "scumm/scumm.h"
 #include "scumm/scumm_v2.h"
 #include "scumm/actor.h"
@@ -164,7 +165,7 @@ void ScummEngine::appbasePeerAfterInput() {
     if(peerRole==1){setTalkSpeed(_defaultTextSpeed);peerRecord[1].v[7]=_defaultTextSpeed;}
     else {_defaultTextSpeed=peerTextSpeed;setTalkSpeed(peerTextSpeed);if(VAR_CHARINC!=0xff)VAR(VAR_CHARINC)=9-peerTextSpeed;}
 }
-void ScummEngine::appbasePeerMusic() { if(peerRole && peerInFrame && VAR_MUSIC_TIMER!=0xff)VAR(VAR_MUSIC_TIMER)=peerMusic; }
+void ScummEngine::appbasePeerMusic() { if(VAR_MUSIC_TIMER==0xff)return;if(peerRole && peerInFrame)VAR(VAR_MUSIC_TIMER)=peerMusic;VAR(VAR_MUSIC_TIMER)=appbaseSpectatorValue(2,0,VAR(VAR_MUSIC_TIMER)); }
 void ScummEngine::appbasePeerInput(int area,int value,int mode) { if(peerRole==1 && peerInFrame)peerRecordEvent(25,area,value,mode); }
 bool ScummEngine::appbasePeerInputs() {
     if(peerRole==1 && peerInFrame && (partyMenuQueued || partyMenuPending)) {
@@ -236,15 +237,15 @@ bool ScummEngine::appbaseRequestObjectReaction(unsigned index, unsigned room, un
 }
 int ScummEngine::appbaseCoopRandom(int maximum,int value) {
     if(peerRole && peerInFrame) {
-        if(peerRole==1){peerRecordEvent(31,maximum,value);return value;}
-        if(peerRandom.empty() || peerRandom[0].v[2]!=maximum){peerFailed=4;return value;}
-        const int result=peerRandom[0].v[3];peerRandom.remove_at(0);return result;
+        if(peerRole==1){peerRecordEvent(31,maximum,value);return appbaseSpectatorValue(3,maximum,value);}
+        if(peerRandom.empty() || peerRandom[0].v[2]!=maximum){peerFailed=4;return appbaseSpectatorValue(3,maximum,value);}
+        const int result=peerRandom[0].v[3];peerRandom.remove_at(0);return appbaseSpectatorValue(3,maximum,result);
     }
     // Replay only the already accepted original high-score graphic. Other
     // random calls, including the first real choice, retain their normal RNG.
-    return applying && arcadeReplay>=0 && maximum==3 && _currentScript!=0xff &&
+    return appbaseSpectatorValue(3,maximum, applying && arcadeReplay>=0 && maximum==3 && _currentScript!=0xff &&
         vm.slot[_currentScript].where==WIO_GLOBAL && vm.slot[_currentScript].number==102
-        ? arcadeReplay : value;
+        ? arcadeReplay : value);
 }
 bool ScummEngine::appbaseCoopManualGive(int recipient) {
     if(!localActor)return false;
@@ -820,6 +821,24 @@ const char *ScummEngine::appbaseCoopName(int id) {
     if(id<=0 || id>=_numActors) return "";
     const byte *name=_actors[id]->getActorName();
     return name ? reinterpret_cast<const char *>(name) : "";
+}
+// The observer checkpoint includes transient co-op context. It is never
+// accepted from a spectator by a player or a player synchronization endpoint.
+void appbaseCoopObserverSync(Common::Serializer &s) {
+    for(int *v : {&localActor,&remoteActor,&ticks,&arcadeReplay,&selectionInputSlot,&sceneStage,&sceneScript,&sceneActor,&lastRoom,&lastMoving,&conflictStage,&chatLength,&chatDeliveryStatus,&pendingSkipScript,&pendingSkipTicks,&peerRole,&peerFrame,&peerAck,&peerFailed,&peerMusic,&peerTextSpeed,&peerLeadLimit,&partyMenuQueued,&partyMenuPending,&partyMenuAge,&partyHoverX,&partyHoverY,&peerKeyFlags})s.syncAsSint32LE(*v);
+    for(bool *v : {&refreshPlant,&refreshArcade,&sceneReleased,&applying,&frozen,&predicting,&mansionEntrySent,&fridgeHungerSent,&preparatoryFrozen,&pendingIntroStart,&introAutoHold,&peerInFrame,&partyMenuLocked,&partyMenuLocalAllowed})s.syncAsByte(*v);
+    for(bool &v : pendingPickup)s.syncAsByte(v);
+    for(bool &v : lightKnown)s.syncAsByte(v);
+    for(int &v : roomLight)s.syncAsSint32LE(v);
+    for(CoopEvent *event : {&remoteMove,&peerEnd,&peerInput})for(int &v : event->v)s.syncAsSint32LE(v);
+    for(Common::Array<CoopEvent> *list : {&incoming,&conflictSpeech,&peerQueue,&peerRecord,&peerInputs,&peerSounds,&peerRandom,&peerChat}){
+        uint32 size=list->size();s.syncAsUint32LE(size);if(size>4096)error("Observer co-op queue exceeds bound");
+        if(s.isLoading())list->resize(size);for(CoopEvent &event : *list)for(int &v : event.v)s.syncAsSint32LE(v);
+    }
+    uint32 size=chatSpeech.size();s.syncAsUint32LE(size);if(size>8)error("Observer speech queue exceeds bound");
+    if(s.isLoading())chatSpeech.resize(size);
+    for(ChatSpeech &line : chatSpeech){s.syncAsSint32LE(line.actor);s.syncAsSint32LE(line.room);s.syncAsSint32LE(line.age);s.syncBytes(line.text,161);}
+    s.syncBytes(chatText,161);
 }
 extern "C" {
 // Narrow string bridge: ordered printable bytes, no pointers or escape codes.

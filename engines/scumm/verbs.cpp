@@ -1140,6 +1140,7 @@ void ScummEngine::drawVerb(int verb, int mode) {
 		return;
 
 	vs = &_verbs[verb];
+	const byte *figureName = (const byte *)_appbaseExtensions.figureVerbName(vs->verbid);
 #ifdef __EMSCRIPTEN__
 	if (!appbaseCoopVerb(vs->verbid)) { restoreVerbBG(verb); return; }
 #endif
@@ -1154,7 +1155,7 @@ void ScummEngine::drawVerb(int verb, int mode) {
 
 		const bool isRtl = _language == Common::HE_ISR && !vs->center;
 		#ifdef __EMSCRIPTEN__
-        const byte *appbaseVerbSource = getResourceAddress(rtVerb, verb);
+        const byte *appbaseVerbSource = figureName ? figureName : getResourceAddress(rtVerb, verb);
         const int appbaseX = appbaseVerbGeometry(vs->verbid, appbaseVerbSource, 0);
         if (appbaseX >= 0) {
             vs->curRect.left = appbaseX;
@@ -1183,7 +1184,7 @@ void ScummEngine::drawVerb(int verb, int mode) {
 		   verb += _inventoryOffset;
 		 */
 
-		const byte *msg = getResourceAddress(rtVerb, verb);
+		const byte *msg = figureName ? figureName : getResourceAddress(rtVerb, verb);
 		if (!msg)
 			return;
 

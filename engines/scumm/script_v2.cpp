@@ -1686,7 +1686,9 @@ const byte *ScummEngine_v2::appbaseItemName(int id) {
     for(int i=0;i<_appbaseItemCount;++i)if(_appbaseItems[i].id==id){
         AppbaseItem &item=_appbaseItems[i];
         const int configured=EM_ASM_INT({return Array.isArray(Module.scummItems)?1:0;});
-        if(configured)EM_ASM({const item=(Module.scummItems||[]).find(item=>item.id===$0);const text=item?.names?.[Module.mmLanguage==='de'?'de':'en']||item?.name;if(typeof text==='string'){let i=0;for(;i<80&&i<text.length;++i){const value=text.charCodeAt(i);HEAPU8[$1+i]=value>=32&&value<=255?value:63;}HEAPU8[$1+i]=0;}},id,item.name);
+        // Translation-overlay state is separate from the original data language.
+        // Native German Zak uses no translation overlay, but needs German names.
+        if(configured)EM_ASM({const item=(Module.scummItems||[]).find(item=>item.id===$0);const text=item?.names?.[$2?'de':'en']||item?.name;if(typeof text==='string'){let i=0;for(;i<80&&i<text.length;++i){const value=text.charCodeAt(i);HEAPU8[$1+i]=value>=32&&value<=255?value:63;}HEAPU8[$1+i]=0;}},id,item.name,appbaseGerman() || _language==Common::DE_DEU);
         else if(_game.id==GID_MANIAC && id==10001)Common::strlcpy(reinterpret_cast<char *>(item.name),appbaseGerman()?"Nuke'm-Handbuch":"Nuke'm manual",sizeof(item.name));
         return item.name;
     }
@@ -1765,7 +1767,7 @@ bool ScummEngine_v2::appbaseWardrobeSentence(int verb,int object,int target) {
     if(_game.id!=GID_ZAK || (appbaseItem(6,object)<=0 && appbaseItem(6,target)<=0))return false;
     if((verb==6 || verb==7) && target==0){
         const int wearer=appbaseItem(6,object),ego=VAR(VAR_EGO);
-        if(ego!=wearer || appbaseItem(2,object)!=wearer){_actorToPrintStrFor=ego;actorTalk((const byte *)(appbaseGerman()?"Das passt mir nicht.":"That does not fit me."));}
+        if(ego!=wearer || appbaseItem(2,object)!=wearer){_actorToPrintStrFor=ego;actorTalk((const byte *)((appbaseGerman() || _language==Common::DE_DEU)?"Das passt mir nicht.":"That does not fit me."));}
         else if(!appbaseCoopItemWear(object,verb==6?1:0))appbaseItem(9,object,verb==6?1:0);
     }
     return true; // Virtual garments never enter original object scripts.
@@ -1781,7 +1783,7 @@ int ScummEngine_v2::appbaseManualRandom(int maximum,int value) {
     return value;
 }
 int ScummEngine_v2::appbaseManual(int operation) {
-    static bool cancelRequested=false;
+    bool &cancelRequested=_appbaseManualCancelRequested;
     const bool keypad=_game.id==GID_MANIAC && _game.version==2 &&
         _currentRoom==43 && _scummVars[128]==1 && isScriptRunning(44) && isScriptRunning(167);
     if(operation==3){_appbaseManualRetry=false;_appbaseGivingItem=0;cancelRequested=false;if(appbaseItemName(VAR(VAR_SENTENCE_OBJECT1)))resetSentence();return 1;}

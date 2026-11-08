@@ -971,28 +971,33 @@ bool Sound::isMouthSyncOff(uint pos) {
 }
 
 int Sound::isSoundRunning(int sound) const {
+#ifdef __EMSCRIPTEN__
+    const auto observed=[&](int value){return _vm->appbaseSpectatorValue(1,sound,value);};
+#else
+    const auto observed=[](int value){return value;};
+#endif
 #ifdef ENABLE_SCUMM_7_8
 	if (_vm->_imuseDigital) {
-		return (_vm->_imuseDigital->isSoundRunning(sound) != 0);
+		return observed((_vm->_imuseDigital->isSoundRunning(sound) != 0));
 	}
 #endif
 
 	if (sound == _currentCDSound)
-		return pollCD();
+		return observed(pollCD());
 
 	if (_mixer->isSoundIDActive(sound))
-		return 1;
+		return observed(1);
 
 	if (isSoundInQueue(sound))
-		return 1;
+		return observed(1);
 
 	if (sound > _vm->_numSounds || !_vm->_res->isResourceLoaded(rtSound, sound))
-		return 0;
+		return observed(0);
 
 	if (_vm->_musicEngine)
-		return _vm->_musicEngine->getSoundStatus(sound);
+		return observed(_vm->_musicEngine->getSoundStatus(sound));
 
-	return 0;
+	return observed(0);
 }
 
 /**

@@ -4,6 +4,7 @@
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
 #include "common/system.h"
+#include "common/serializer.h"
 #include "scumm/actor.h"
 #include "scumm/scumm.h"
 #include "scumm/scumm_v2.h"
@@ -94,7 +95,7 @@ int ScummEngine::appbaseVerbGeometry(int verb, const byte *source, int field) {
     }, verb, source, resStrLen(source), language, field);
 }
 void ScummEngine::appbaseTextLoaded() {
-    appbaseManual(3);
+    if(!appbaseSpectatorReplay())appbaseManual(3);
     loadedFramePending = (_game.id == GID_MANIAC || _game.id == GID_ZAK) && _game.version == 2;
 }
 void ScummEngine::appbaseTextPresented() { loadedFramePending = false; initialFramePresented = true; }
@@ -106,7 +107,7 @@ void ScummEngine::appbaseTextTick() {
     // Loading clears all screen pixels, including any serialized caption's mask.
     // Repaint that blank frame even when a saved message is still pending.
     // A normal language change never gains this permission to erase a caption.
-    if (isPaused() && _completeScreenRedraw && (!_haveMsg || loadedFramePending) && _currentRoom) {
+    if ((isPaused() || appbaseSpectatorReplay()) && _completeScreenRedraw && (!_haveMsg || loadedFramePending || appbaseSpectatorReplay()) && _currentRoom) {
         _completeScreenRedraw = false;
         _fullRedraw = true;
         scummLoop_handleDrawing();
@@ -145,6 +146,12 @@ void ScummEngine::appbaseTextTick() {
     drawSentence();
     static_cast<ScummEngine_v2 *>(this)->redrawV2Inventory();
     if (isPaused()) drawDirtyScreenParts();
+}
+void appbaseTextObserverSync(Common::Serializer &s) {
+    for(int *v : {&originalCount,&translatedCount,&renderedCount,&mappedCount,&initialTalkDelay,&messageTextSpeed,&language,&requestedLanguage})s.syncAsSint32LE(*v);
+    for(bool *v : {&originalExpansion,&packedExpansion,&countedSpeech,&loadedFramePending,&initialFramePresented})s.syncAsByte(*v);
+    s.syncAsUint32LE(nextBuffer);s.syncBytes(&buffers[0][0],sizeof(buffers));
+    if(s.isLoading())EM_ASM({Module.mmLanguage=$0?'de':'en';},language);
 }
 extern "C" {
 EMSCRIPTEN_KEEPALIVE int mm_text_version() { return 1; }

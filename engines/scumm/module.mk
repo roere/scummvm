@@ -4,6 +4,7 @@ MODULE_OBJS := \
 	appbase-extensions.o \
 	appbase-render.o \
 	appbase-coop.o \
+	appbase-spectator.o \
 	appbase-translation.o \
 	actor.o \
 	akos.o \

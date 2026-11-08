@@ -587,6 +587,15 @@ protected:
 
 public:
 #ifdef __EMSCRIPTEN__
+	bool appbaseSpectatorReplay() const;
+	int appbaseSpectatorWait(int original) const;
+	bool appbaseSpectatorBegin(int &delta);
+	void appbaseSpectatorIdle();
+	void appbaseSpectatorInput();
+	void appbaseSpectatorEnd();
+	int appbaseSpectatorValue(int kind,int id,int value) const;
+	void appbaseSpectatorContext(Common::Serializer &s);
+	void appbaseSpectatorLoaded();
 	bool appbaseGerman() const;
     virtual int appbaseItem(int operation,int id,int value=0) { return 0; }
     virtual const byte *appbaseItemName(int id) { return nullptr; }

@@ -2635,7 +2635,7 @@ Common::Error ScummEngine::go() {
 		// of the main loop.
 
 #ifdef __EMSCRIPTEN__
-        const int peerWait=appbasePeerWait(delta*4);
+        const int peerWait=appbaseSpectatorWait(appbasePeerWait(delta*4));
         waitForTimer(peerWait);
         // Give incoming messages and browser UI a turn between catch-up frames.
         if(peerWait==0 && delta>0)_system->delayMillis(1);
@@ -2647,7 +2647,8 @@ Common::Error ScummEngine::go() {
 #ifdef __EMSCRIPTEN__
 		appbasePresentationTick();
 		// Presentation updates remain available while the VM and its clock stop.
-		if (isPaused()) appbaseTextTick();
+		if (isPaused() || appbaseSpectatorReplay()) appbaseTextTick();
+		appbaseSpectatorIdle();
 #endif
 		if (!isPaused()) {
 			scummLoop(delta);
@@ -2826,12 +2827,14 @@ void ScummEngine_v0::scummLoop(int delta) {
 
 void ScummEngine::scummLoop(int delta) {
 #ifdef __EMSCRIPTEN__
+	if (appbaseSpectatorBegin(delta)) return;
 	const bool peerWaiting=appbasePeerTick(delta);
 	appbaseTextTick();
 	if (peerWaiting || appbaseCoopTick()) {
 		// Reserved AppBase persistence still runs at a normal VM loop boundary.
 		// This permits a consistent checkpoint while both players are held.
 		if(_saveLoadFlag && _saveLoadSlot==254) scummLoop_handleSaveLoad();
+		appbaseSpectatorEnd();
 		return;
 	}
 #endif
@@ -2883,6 +2886,7 @@ void ScummEngine::scummLoop(int delta) {
 	if (_game.version != 7 || isFTDOSDemo) {
 #ifdef __EMSCRIPTEN__
         appbasePeerBeforeInput();
+        appbaseSpectatorInput();
 #endif
 		processInput();
 #ifdef __EMSCRIPTEN__
@@ -2950,7 +2954,7 @@ load_game:
 #endif
 		scummLoop_handleSaveLoad();
 #ifdef __EMSCRIPTEN__
-        if(appbaseHeldRestore)return;
+        if(appbaseHeldRestore){appbaseSpectatorEnd();return;}
 #endif
     }
 
@@ -3078,6 +3082,7 @@ load_game:
 	CursorMan.showMouse(_cursor.state > 0);
 #ifdef __EMSCRIPTEN__
 	appbasePeerEnd();
+	appbaseSpectatorEnd();
 #endif
 }
 

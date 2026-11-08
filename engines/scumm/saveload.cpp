@@ -1090,6 +1090,12 @@ bool ScummEngine::loadState(int slot, bool compat, Common::String &filename) {
 	_sound->pauseSounds(false);
 
 	_sound->restoreAfterLoad();
+	#ifdef __EMSCRIPTEN__
+	if(!appbaseSpectatorReplay())_appbaseExtensions.restoreFigureState(*this);
+	appbaseSpectatorLoaded();
+	#else
+	_appbaseExtensions.restoreFigureState(*this);
+	#endif
 
 	return true;
 }
