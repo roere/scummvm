@@ -598,12 +598,12 @@ public:
 	void appbaseSpectatorLoaded();
 	bool appbaseGerman() const;
     virtual int appbaseItem(int operation,int id,int value=0) { return 0; }
+    virtual const byte *appbaseObjectResource(int id) const { return nullptr; }
+    virtual void appbaseObjectsSave(Common::WriteStream &out) const {}
+    virtual bool appbaseObjectsAcceptSave(Common::SeekableReadStream &in) const { return true; }
     virtual const byte *appbaseItemName(int id) { return nullptr; }
-    bool appbaseCoopItemGive(int item,int recipient);
-    bool appbaseCoopItemWear(int item,int worn);
     virtual int appbaseManual(int operation) { return 0; }
     virtual int appbaseManualOwner(int owner) { return 0; }
-    bool appbaseCoopManualGive(int recipient);
     virtual int appbaseManualRandom(int maximum,int value) { return value; }
 	Common::String appbaseTextKey() const;
 	const byte *appbaseText(const byte *source, const Common::String &key, int kind);

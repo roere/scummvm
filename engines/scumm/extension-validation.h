@@ -77,7 +77,7 @@ inline bool validateExtensionV2(const unsigned char *p, size_t size, const Exten
   case 0x18:branch();break;
   case 0x04:case 0x08:case 0x38:case 0x44:case 0x48:case 0x78:case 0x88:case 0xc8:var();arg(128,true);branch();break;
   case 0x28:case 0xa8:var();branch();break;
-  case 0x0f:case 0x6f:case 0xff:arg(128,true,Object);branch();break;
+  case 0x0f:case 0x2f:case 0xaf:case 0x6f:case 0xff:arg(128,true,Object);branch();break;
   case 0x1d:case 0x9d:arg(128,true,Object);arg(64,false);branch();break;
   case 0x31:case 0xb1:{result();unsigned base=word(),index=arg(128,false);if(base>=l.variables*16||(index!=UINT32_MAX&&base+index>=l.variables*16))bad("invalid bit variable");break;}
   case 0x42:case 0x4a:arg(128,false,Script);break;
@@ -85,10 +85,13 @@ inline bool validateExtensionV2(const unsigned char *p, size_t size, const Exten
   case 0x52:case 0xd2:arg(128,false,Actor);break;
   case 0x72:arg(128,false,Room);break;
   case 0x68:result();arg(128,false,Script);break;
+  case 0x03:case 0x83:result();arg(128,false,Actor);break;
+  case 0x27:case 0x67:arg(128,true,Object);break;
+  case 0x6b:if(byte()!=1)bad("unsupported object host service");arg(0,true,Object);break;
   case 0x10:case 0x90:case 0x6c:case 0xec:result();arg(128,true,Object);break;
   case 0x71:case 0xf1:result();arg(128,false,Actor);break;
   case 0x34:case 0xf4:result();arg(128,true,Object);arg(64,true,Object);break;
-  case 0x29:case 0xe9:arg(128,true,Object);arg(64,false,Owner);break;
+  case 0x29:case 0x69:case 0xa9:case 0xe9:arg(128,true,Object);arg(64,false,Owner);break;
   case 0x50:case 0xd0:arg(128,true,Object);break;
   case 0x0d:case 0xcd:arg(128,false,Actor);arg(64,false,Actor);byte();break;
   case 0x36:case 0xf6:arg(128,false,Actor);arg(64,true,Object);break;

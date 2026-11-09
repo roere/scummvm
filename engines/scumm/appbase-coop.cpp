@@ -247,26 +247,6 @@ int ScummEngine::appbaseCoopRandom(int maximum,int value) {
         vm.slot[_currentScript].where==WIO_GLOBAL && vm.slot[_currentScript].number==102
         ? arcadeReplay : value);
 }
-bool ScummEngine::appbaseCoopManualGive(int recipient) {
-    if(!localActor)return false;
-    Actor *a=_actors[localActor];
-    emit(1,localActor,a->_room,a->getRealPos().x,a->getRealPos().y,a->getFacing(),a->_frame,a->_costume);
-    emit(21,10001,a->_room,localActor,recipient);
-    return true; // Ownership changes only after the canonical server reply.
-}
-bool ScummEngine::appbaseCoopItemGive(int item,int recipient) {
-    if(!localActor)return false;
-    if(_game.id==GID_MANIAC && item==10001)return appbaseCoopManualGive(recipient);
-    Actor *a=_actors[localActor];
-    emit(1,localActor,a->_room,a->getRealPos().x,a->getRealPos().y,a->getFacing(),a->_frame,a->_costume);
-    emit(22,item,a->_room,localActor,recipient);return true;
-}
-bool ScummEngine::appbaseCoopItemWear(int item,int worn) {
-    if(!localActor)return false;
-    Actor *actor=_actors[localActor];
-    emit(1,localActor,actor->_room,actor->getRealPos().x,actor->getRealPos().y,actor->getFacing(),actor->_frame,actor->_costume);
-    emit(34,item,actor->_room,localActor,worn);return true;
-}
 bool ScummEngine::appbasePartyActor(int id) const {
     return appbasePartyOriginalActor(_game.id==GID_ZAK,id) || _appbaseExtensions.partyActor(id);
 }
@@ -438,7 +418,9 @@ bool ScummEngine::appbaseCoopTransfer(int object,int owner) {
     // inside the recorder. Taking it back is an original inventory ownership
     // opcode, not pickupObject; route that through the same canonical grant.
     if(from==14 && owner==localActor){emit(2,object,_game.id==GID_ZAK?_actors[localActor]->_room:_roomResource,localActor);return true;}
-	if (from==localActor && (owner==remoteActor || (_game.id==GID_ZAK && appbasePartyActor(owner) && owner!=localActor && appbaseCoopGet(8,owner,0)==1))) {
+	if (from==localActor && (owner==remoteActor || (appbasePartyActor(owner) && owner!=localActor &&
+            ((_game.id==GID_ZAK && appbaseCoopGet(8,owner,0)==1) ||
+             (_game.id==GID_MANIAC && (owner==_scummVars[47] || owner==_scummVars[48] || owner==_scummVars[49])))))) {
 		Actor *a=_actors[localActor];
 		emit(1,localActor,a->_room,a->getRealPos().x,a->getRealPos().y,a->getFacing(),a->_frame,a->_costume);
 		emit(5,object,a->_room,localActor,owner);
@@ -629,7 +611,6 @@ bool ScummEngine::appbaseCoopTick() {
 	applying=true;
 	for(uint i=0;i<incoming.size();++i) {
 		const int *v=incoming[i].v;
-        if(v[0]==21 && v[1]==10001 && v[3]>=1 && v[3]<=7)appbaseManualOwner(v[3]);
         if(v[0]==15 && v[1]>=(_game.id==GID_ZAK?7:8) && v[1]<_numActors && v[2]>=0 && v[2]<(_game.id==GID_ZAK?256:54)){
             Actor *actor=_actors[v[1]];actor->stopActorMoving();
             if(actor->_costume!=v[7])actor->setActorCostume(v[7]);
@@ -712,8 +693,15 @@ bool ScummEngine::appbaseCoopTick() {
 		}
 		if(v[0] == 1 && v[1] == remoteActor && v[2] > 0 && v[2] < (_game.id==GID_ZAK?256:54)) {
 			Actor *a=_actors[remoteActor];
+            // Costume is part of every native actor pose, independent of which
+            // original or extension script caused the change. Only accept an
+            // installed resource; a sparse/missing costume cannot crash a peer.
+            const bool costumePresent=v[7]==0 || (v[7]>0 && v[7]<_numCostumes &&
+                (_appbaseExtensions.info(6,v[7])>0 || _res->_types[rtCostume][v[7]]._roomoffs!=RES_INVALID_OFFSET));
+            const bool costumeChanged=costumePresent && a->_costume!=v[7];
+            if(costumeChanged)a->setActorCostume(v[7]);
 			bool animate=predicting && remoteMove.v[2]==v[2] && v[2]==_currentRoom;
-			if (!animate || a->_room!=v[2] || ABS(a->getRealPos().x-v[3])>4 || ABS(a->getRealPos().y-v[4])>8) {
+			if (costumeChanged || !animate || a->_room!=v[2] || ABS(a->getRealPos().x-v[3])>4 || ABS(a->getRealPos().y-v[4])>8) {
 				a->stopActorMoving();
 				a->putActor(v[3],v[4],v[2]);
 				a->setDirection(v[5]);
@@ -733,13 +721,14 @@ bool ScummEngine::appbaseCoopTick() {
 		}
 		if((v[0] == 2 || v[0] == 3) && v[1] > 0 && v[1] < _numGlobalObjects) {
 			int obj=v[1];
-			if(v[0] == 2 && (v[3] == localActor || v[3] == remoteActor ||
+			if(v[0] == 2 && (v[3] == localActor || v[3] == remoteActor || appbasePartyActor(v[3]) ||
                 (_game.id==GID_ZAK && (v[3]==5 || v[3]==6)))) {
                 if(obj<1024)pendingPickup[obj]=false;
 				bool present=false;
 				for(int j=0;j<_numInventory;++j)if(_inventory[j] == obj)present=true;
 				// For old bundles verify the object exists before using the normal importer.
-				if(!present && v[2] > 0 && v[2] < (_game.id==GID_ZAK?256:54)) {
+				if(!present && appbaseObjectResource(obj)){addObjectToInventory(obj,0);present=true;}
+                if(!present && v[2] > 0 && v[2] < (_game.id==GID_ZAK?256:54)) {
 					const int resourceRoom=_game.id==GID_ZAK && v[2]>127?_resourceMapper[v[2]&127]:v[2];
                     const byte *room=getResourceAddress(rtRoom,resourceRoom);
 					bool found=false;
@@ -885,6 +874,7 @@ EMSCRIPTEN_KEEPALIVE int mm_manual_command(int operation) {
     return g_scumm && (operation==0 || operation==1)?g_scumm->appbaseManual(operation):0;
 }
 EMSCRIPTEN_KEEPALIVE int scumm_item_version() { return 1; }
+EMSCRIPTEN_KEEPALIVE int scumm_native_objects_version() { return 1; }
 EMSCRIPTEN_KEEPALIVE int scumm_item_owner(int id,int owner) { return !g_scumm?0:(owner<0?g_scumm->appbaseItem(2,id):g_scumm->appbaseItem(3,id,owner)); }
 EMSCRIPTEN_KEEPALIVE int scumm_item_wear(int id,int worn) { return g_scumm?g_scumm->appbaseItem(9,id,worn):0; }
 EMSCRIPTEN_KEEPALIVE int scumm_item_id(int index) { return g_scumm?g_scumm->appbaseItem(5,index):0; }

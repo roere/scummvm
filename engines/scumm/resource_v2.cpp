@@ -79,6 +79,9 @@ void ScummEngine_v2::readClassicIndexFile() {
 	_fileHandle->seek(0, SEEK_SET);
 
 	readMAXS(0);
+#ifdef __EMSCRIPTEN__
+	appbaseObjectsConfigure();
+#endif
 	allocateArrays();
 
 	_fileHandle->readUint16LE(); /* version magic number */
@@ -142,6 +145,9 @@ void ScummEngine_v2::readEnhancedIndexFile() {
 	_fileHandle->seek(0, SEEK_SET);
 
 	readMAXS(0);
+#ifdef __EMSCRIPTEN__
+	appbaseObjectsConfigure();
+#endif
 	allocateArrays();
 
 	_fileHandle->readUint16LE(); /* version magic number */
@@ -155,7 +161,11 @@ void ScummEngine_v2::readEnhancedIndexFile() {
 void ScummEngine_v2::readGlobalObjects() {
 	int i;
 	int num = _fileHandle->readUint16LE();
-	assert(num == _numGlobalObjects);
+#ifdef __EMSCRIPTEN__
+    assert(num == (_appbaseOriginalObjects ? _appbaseOriginalObjects : _numGlobalObjects));
+#else
+    assert(num == _numGlobalObjects);
+#endif
 
 	for (i = 0; i != num; i++) {
 		byte tmp = _fileHandle->readByte();

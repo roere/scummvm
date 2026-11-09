@@ -1185,12 +1185,7 @@ void ScummEngine::checkAndRunSentenceScript() {
 		VAR(VAR_ACTIVE_VERB) = st.verb;
 		VAR(VAR_ACTIVE_OBJECT1) = st.objectA;
 		VAR(VAR_ACTIVE_OBJECT2) = st.objectB;
-#ifdef __EMSCRIPTEN__
-        // Virtual clothes use the original V2 sentence builder and confirmation.
-        // Dispatch only when its accepted sentence reaches the normal executor,
-        // before looking for an object script in the original resource tables.
-        if (_game.version == 2 && static_cast<ScummEngine_v2 *>(this)->appbaseWardrobeSentence(st.verb, st.objectA, st.objectB)) return;
-#endif
+
 		VAR(VAR_VERB_ALLOWED) = (0 != getVerbEntrypoint(st.objectA, st.verb));
 	} else {
 		localParamList[0] = st.verb;
@@ -1419,8 +1414,6 @@ void ScummEngine_v2::runInputScript(int clickArea, int val, int mode) {
 	appbasePeerInput(clickArea,val,mode);
 #endif
 #ifdef __EMSCRIPTEN__
-    // Keep the virtual document out of original object and owner tables.
-    if(appbaseManualInput(clickArea,val))return;
 	appbaseCoopInput(clickArea, val);
 #endif
 	int args[NUM_SCRIPT_LOCAL];

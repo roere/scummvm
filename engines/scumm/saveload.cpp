@@ -722,6 +722,9 @@ bool ScummEngine::saveState(Common::WriteStream *out, bool writeHeader) {
         out->writeUint32LE(appbaseManualOwner(0));
     }
 #endif
+#ifdef __EMSCRIPTEN__
+    appbaseObjectsSave(*out);
+#endif
 	_appbaseExtensions.saveIdentity(*out);
 	return true;
 }
@@ -774,7 +777,11 @@ bool ScummEngine::loadState(int slot, bool compat, Common::String &filename) {
 	Common::SeekableReadStream *in = openSaveFileForReading(slot, compat, filename);
 	if (!in)
 		return false;
-	if (!_appbaseExtensions.acceptsSave(*in)) {
+	if (!_appbaseExtensions.acceptsSave(*in)
+#ifdef __EMSCRIPTEN__
+        || !appbaseObjectsAcceptSave(*in)
+#endif
+    ) {
 		warning("Savegame belongs to a different extension variant or actor layout");
 		delete in;
 		return false;
@@ -920,27 +927,7 @@ bool ScummEngine::loadState(int slot, bool compat, Common::String &filename) {
 	Common::Serializer ser(in, nullptr);
 	ser.setVersion(hdr.ver);
 	saveLoadWithSerializer(ser);
-#ifdef __EMSCRIPTEN__
-    // Optional bounded catalog trailer. Ignore unknown IDs from another catalog.
-    // The original v121 VM payload and legacy ABMM footer remain unchanged.
-    if(in->size()-in->pos()>=12){
-        const int64 position=in->pos();
-        if(in->readUint32BE()==MKTAG('A','B','S','I') && in->readUint32LE()==1){
-            const uint32 count=in->readUint32LE();
-            if(count<=32 && in->size()-in->pos()>=count*8){
-                for(uint32 i=0;i<count;++i){const uint32 id=in->readUint32LE(),owner=in->readUint32LE();if(id>=10001 && id<=10032)appbaseItem(3,id,owner);}
-            }else in->seek(position);
-        }else in->seek(position);
-    }
-    if(_game.id==GID_MANIAC && _game.version==2){
-        int owner=3;
-        if(in->size()-in->pos()==8 && in->readUint32BE()==MKTAG('A','B','M','M')){
-            const uint32 saved=in->readUint32LE();
-            if(saved>=1 && saved<=7)owner=saved;
-        }
-        appbaseManualOwner(owner);
-    }
-#endif
+
 	delete in;
 
 	// Init NES costume data

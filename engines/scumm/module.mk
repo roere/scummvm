@@ -2,6 +2,7 @@ MODULE := engines/scumm
 
 MODULE_OBJS := \
 	appbase-extensions.o \
+	appbase-objects.o \
 	appbase-render.o \
 	appbase-coop.o \
 	appbase-spectator.o \

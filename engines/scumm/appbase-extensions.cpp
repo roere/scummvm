@@ -331,7 +331,7 @@ void AppbaseExtensions::configure(ScummEngine &vm, const Common::String &path) {
             const Common::Array<byte> bytes = read(directory.join(file), 1048576);
             if (bytes.size() < 33 || bytes.size() != number(image, "bytes") || digest(bytes.data(), bytes.size()) != text(image, "md5") || READ_BE_UINT32(bytes.data()) != 0x89504e47 || READ_BE_UINT32(bytes.data() + 4) != 0x0d0a1a0a || READ_BE_UINT32(bytes.data() + 16) != number(image, "width") || READ_BE_UINT32(bytes.data() + 20) != number(image, "height") || number(image, "width") > 256 || number(image, "height") > 256) error("Invalid wardrobe item image");
 #ifdef __EMSCRIPTEN__
-            const int matches = EM_ASM_INT({const item=(Module.scummItems||[]).find(item=>item.id===$0);return item&&item.wearer===$1&&item.baseCostume===$2&&item.costume===$3?1:0;}, id, wearer, base, costume);
+            const int matches = EM_ASM_INT({const item=(Module.scummObjects||[]).find(item=>item.catalogId===$0);return item&&item.initialOwner===$1?1:0;}, id, wearer, base, costume);
             if (!matches) error("Runtime wardrobe differs from pinned manifest");
 #endif
         }

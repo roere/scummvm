@@ -40,6 +40,11 @@ void ScummEngine::addObjectToInventory(uint obj, uint room) {
 
 	debug(1, "Adding object %d from room %d into inventory", obj, room);
 
+#ifdef __EMSCRIPTEN__
+    if((ptr=appbaseObjectResource(obj))!=nullptr){
+        size=READ_LE_UINT16(ptr);
+    } else
+#endif
 	if (whereIsObject(obj) == WIO_FLOBJECT) {
 		idx = getObjectIndex(obj);
 		assert(idx >= 0);

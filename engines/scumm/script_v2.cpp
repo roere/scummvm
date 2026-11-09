@@ -177,7 +177,11 @@ void ScummEngine_v2::setupOpcodes() {
 	OPCODE(0x68, o5_isScriptRunning);
 	OPCODE(0x69, o2_setOwnerOf);
 	OPCODE(0x6a, o2_subIndirect);
-	OPCODE(0x6b, o2_dummy);
+	#ifdef __EMSCRIPTEN__
+    OPCODE(0x6b, o2_extensionService);
+#else
+    OPCODE(0x6b, o2_dummy);
+#endif
 	/* 6C */
 	OPCODE(0x6c, o2_getObjPreposition);
 	OPCODE(0x6d, o2_putActorInRoom);
@@ -461,6 +465,9 @@ void ScummEngine_v2::decodeParseString() {
 }
 
 int ScummEngine_v2::readVar(uint var) {
+#ifdef __EMSCRIPTEN__
+    if(appbaseObjectLocal(var))return vm.localvar[_currentScript][var-248];
+#endif
 	if (_game.version >= 1 && var >= 14 && var <= 16)
 		var = _scummVars[var];
 
@@ -470,6 +477,9 @@ int ScummEngine_v2::readVar(uint var) {
 }
 
 void ScummEngine_v2::writeVar(uint var, int value) {
+#ifdef __EMSCRIPTEN__
+    if(appbaseObjectLocal(var)){vm.localvar[_currentScript][var-248]=value;return;}
+#endif
 	assertRange(0, var, _numVariables - 1, "variable (writing)");
 	debugC(DEBUG_VARS, "writeVar(%d) = %d", var, value);
 
@@ -1657,121 +1667,14 @@ void ScummEngine_v2::o2_pickupObject() {
 }
 
 #ifdef __EMSCRIPTEN__
-// Configured virtual items never enter the original resource/owner tables.
-// V2 is the first adapter; other SCUMM engines must explicitly implement it.
-void ScummEngine_v2::appbaseItemsReset() {
-    _appbaseItemCount=0;_appbaseGivingItem=0;
-    if(_game.version!=2 || (_game.id!=GID_MANIAC && _game.id!=GID_ZAK))return;
-    const int count=EM_ASM_INT({return Array.isArray(Module.scummItems)?Math.min(32,Module.scummItems.length):-1;});
-    if(count<0){
-        if(_game.id==GID_MANIAC){AppbaseItem &item=_appbaseItems[_appbaseItemCount++];item.id=10001;item.owner=3;Common::strlcpy(reinterpret_cast<char *>(item.name),appbaseGerman()?"Nuke'm-Handbuch":"Nuke'm manual",sizeof(item.name));}
-        return;
-    }
-    for(int i=0;i<count;++i){
-        const int id=EM_ASM_INT({return Module.scummItems[$0]?.id||0;},i);
-        const int owner=EM_ASM_INT({return Module.scummItems[$0]?.owner||0;},i);
-        const int maxActor=_game.id==GID_ZAK?4:7;
-        if(id<10001 || id>10032 || owner<0 || (owner>maxActor && !_appbaseExtensions.partyActor(owner)) || appbaseItemName(id))continue;
-        AppbaseItem &item=_appbaseItems[_appbaseItemCount++];item.id=id;item.owner=owner;item.wearer=item.baseCostume=item.costume=0;
-        if(_game.id==GID_ZAK){
-            const int wearer=EM_ASM_INT({return Module.scummItems[$0]?.wearer||0;},i);
-            const int base=EM_ASM_INT({return Module.scummItems[$0]?.baseCostume||0;},i);
-            const int costume=EM_ASM_INT({return Module.scummItems[$0]?.costume||0;},i);
-            if(wearer>0 && wearer<_numActors && _appbaseExtensions.isActor(wearer) && base>0 && base<_numCostumes && costume>0 && costume<_numCostumes && base!=costume){item.wearer=wearer;item.baseCostume=base;item.costume=costume;}
-        }
-        EM_ASM({const name=String(Module.scummItems[$0]?.name||'');let n=0;for(;n<80 && n<name.length;++n){const code=name.charCodeAt(n);HEAPU8[$1+n]=code>=32&&code<=255?code:63;}HEAPU8[$1+n]=0;},i,item.name);
-    }
-}
-const byte *ScummEngine_v2::appbaseItemName(int id) {
-    for(int i=0;i<_appbaseItemCount;++i)if(_appbaseItems[i].id==id){
-        AppbaseItem &item=_appbaseItems[i];
-        const int configured=EM_ASM_INT({return Array.isArray(Module.scummItems)?1:0;});
-        // Translation-overlay state is separate from the original data language.
-        // Native German Zak uses no translation overlay, but needs German names.
-        if(configured)EM_ASM({const item=(Module.scummItems||[]).find(item=>item.id===$0);const text=item?.names?.[$2?'de':'en']||item?.name;if(typeof text==='string'){let i=0;for(;i<80&&i<text.length;++i){const value=text.charCodeAt(i);HEAPU8[$1+i]=value>=32&&value<=255?value:63;}HEAPU8[$1+i]=0;}},id,item.name,appbaseGerman() || _language==Common::DE_DEU);
-        else if(_game.id==GID_MANIAC && id==10001)Common::strlcpy(reinterpret_cast<char *>(item.name),appbaseGerman()?"Nuke'm-Handbuch":"Nuke'm manual",sizeof(item.name));
-        return item.name;
-    }
-    return nullptr;
-}
-int ScummEngine_v2::appbaseItem(int operation,int id,int value) {
-    int count=0;
-    if(operation==4)return _appbaseItemCount;
-    if(operation==5)return id>=0 && id<_appbaseItemCount?_appbaseItems[id].id:0;
-    for(int i=0;i<_appbaseItemCount;++i){
-        AppbaseItem &item=_appbaseItems[i];
-        if((operation==0 || operation==1) && item.owner==id && id>0){if(operation==1 && ++count==value)return item.id;if(operation==0)++count;}
-        if(item.id==id){
-            if(operation==2)return item.owner;
-            if(operation==6)return item.wearer;
-            if(operation==7)return item.costume;
-            if(operation==8)return item.baseCostume;
-            if(operation==9 && item.wearer>0 && item.wearer<_numActors && (value==0 || value==1)){
-                Actor *actor=_actors[item.wearer];
-                if(value && item.owner!=item.wearer)return 0;
-                if(!value && actor->_costume!=item.costume)return 1;
-                const int costume=value?item.costume:item.baseCostume;
-                if(actor->_costume!=costume){actor->stopActorMoving();actor->setActorCostume(costume);actor->startAnimActor(actor->_standFrame);_fullRedraw=true;}
-                return 1;
-            }
-            if(operation==3 && value>=0 && (value<=(_game.id==GID_ZAK?4:7) || _appbaseExtensions.partyActor(value))){
-                if(item.owner!=value){if(item.wearer && item.owner==item.wearer)appbaseItem(9,id,0);item.owner=value;_appbaseGivingItem=0;_inventoryOffset=0;redrawV2Inventory();}return 1;
-            }
-        }
-    }
-    return operation==0?count:0;
-}
+// Native extension objects share the original inventory and sentence scripts.
 int ScummEngine_v2::appbaseManualOwner(int owner) {
-    if(_game.id!=GID_MANIAC || _game.version!=2)return 0;
-    if(owner>=1 && owner<=7)appbaseItem(3,10001,owner);
-    return appbaseItem(2,10001);
+    for(uint i=0;i<_appbaseObjects.size();++i)if(_appbaseObjects[i].document){
+        const int id=_appbaseObjects[i].id;if(owner>=0 && owner!=0)putOwner(id,owner);return getOwner(id);
+    }
+    return 0;
 }
-bool ScummEngine_v2::appbaseManualInput(int area,int value) {
-    if(_game.version!=2 || !_appbaseItemCount)return false;
-    const int ego=VAR(VAR_EGO);
-    // A different, unsupported verb cancels a selected virtual garment before
-    // the original input script can inspect its nonexistent object resource.
-    if(_game.id==GID_ZAK && area==kVerbClickArea && value!=6 && value!=7 && appbaseItem(6,VAR(VAR_SENTENCE_OBJECT1))>0){
-        VAR(VAR_SENTENCE_OBJECT1)=0;VAR(VAR_SENTENCE_OBJECT2)=0;VAR(VAR_SENTENCE_PREPOSITION)=0;
-    }
-    if(_appbaseGivingItem){
-        if(ego==appbaseItem(2,_appbaseGivingItem) && VAR(VAR_SENTENCE_VERB)==kVerbGive && area==kSceneClickArea){
-            const int recipient=getActorFromPos(_virtualMouse.x,_virtualMouse.y);
-            const bool selected=_game.id==GID_ZAK?appbasePartyActor(recipient):
-                (recipient==_scummVars[47] || recipient==_scummVars[48] || recipient==_scummVars[49]);
-            if(recipient>=1 && (recipient<=(_game.id==GID_ZAK?4:7) || _appbaseExtensions.partyActor(recipient)) && recipient!=ego && selected &&
-               _actors[recipient]->_room==_currentRoom && _actors[ego]->_room==_currentRoom){
-                if(!appbaseCoopItemGive(_appbaseGivingItem,recipient))appbaseItem(3,_appbaseGivingItem,recipient);
-                _appbaseGivingItem=0;resetSentence();drawSentence();
-            }
-            return true;
-        }
-        _appbaseGivingItem=0;
-        VAR(VAR_SENTENCE_OBJECT1)=0;VAR(VAR_SENTENCE_OBJECT2)=0;VAR(VAR_SENTENCE_PREPOSITION)=0;drawSentence();
-    }
-    if(area!=kInventoryClickArea || !appbaseItemName(value))return false;
-    if(ego==appbaseItem(2,value) && VAR(VAR_SENTENCE_VERB)==kVerbGive){
-        _appbaseGivingItem=value;VAR(VAR_SENTENCE_OBJECT1)=value;VAR(VAR_SENTENCE_OBJECT2)=0;VAR(VAR_SENTENCE_PREPOSITION)=4;drawSentence();return true;
-    }
-    // Zak's original verbs 6/7 are Put on / Take off (MM uses other semantics).
-    if(_game.id==GID_ZAK && appbaseItem(6,value)>0){
-        const int verb=VAR(VAR_SENTENCE_VERB);
-        if(verb==6 || verb==7)return false; // Original script selects, confirms and queues the sentence.
-        resetSentence();drawSentence();return true;
-    }
-    if(ego==appbaseItem(2,value) && VAR(VAR_SENTENCE_VERB)==kVerbRead)
-        EM_ASM({if(Module.scummItemRead)Module.scummItemRead($0);else if($0===10001&&Module.mmManualRead)Module.mmManualRead();},value);
-    resetSentence();drawSentence();return true;
-}
-bool ScummEngine_v2::appbaseWardrobeSentence(int verb,int object,int target) {
-    if(_game.id!=GID_ZAK || (appbaseItem(6,object)<=0 && appbaseItem(6,target)<=0))return false;
-    if((verb==6 || verb==7) && target==0){
-        const int wearer=appbaseItem(6,object),ego=VAR(VAR_EGO);
-        if(ego!=wearer || appbaseItem(2,object)!=wearer){_actorToPrintStrFor=ego;actorTalk((const byte *)((appbaseGerman() || _language==Common::DE_DEU)?"Das passt mir nicht.":"That does not fit me."));}
-        else if(!appbaseCoopItemWear(object,verb==6?1:0))appbaseItem(9,object,verb==6?1:0);
-    }
-    return true; // Virtual garments never enter original object scripts.
-}
+bool ScummEngine_v2::appbaseManualInput(int area,int value) { return false; }
 int ScummEngine_v2::appbaseManualRandom(int maximum,int value) {
     if(!_appbaseManualRetry || _game.id!=GID_MANIAC || _game.version!=2 ||
         _currentScript==0xff || vm.slot[_currentScript].where!=WIO_GLOBAL || vm.slot[_currentScript].number!=167)return value;
@@ -1786,7 +1689,7 @@ int ScummEngine_v2::appbaseManual(int operation) {
     bool &cancelRequested=_appbaseManualCancelRequested;
     const bool keypad=_game.id==GID_MANIAC && _game.version==2 &&
         _currentRoom==43 && _scummVars[128]==1 && isScriptRunning(44) && isScriptRunning(167);
-    if(operation==3){_appbaseManualRetry=false;_appbaseGivingItem=0;cancelRequested=false;if(appbaseItemName(VAR(VAR_SENTENCE_OBJECT1)))resetSentence();return 1;}
+    if(operation==3){_appbaseManualRetry=false;_appbaseGivingItem=0;cancelRequested=false;return 1;}
     if(operation==0)return keypad?1:0;
     if(operation==1){if(!keypad)return 0;cancelRequested=true;return 1;}
     if(operation!=2 || !cancelRequested)return 0;

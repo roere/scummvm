@@ -56,15 +56,21 @@ public:
     int appbasePeerInventory(int value) { if(value>=0)_inventoryOffset=value;return _inventoryOffset; }
     bool _appbaseManualRetry=false, _appbaseManualCancelRequested=false;
     int _appbaseManualOwner=3;
-    struct AppbaseItem { int id,owner,wearer=0,baseCostume=0,costume=0; byte name[81]; };
-    AppbaseItem _appbaseItems[32] = {};
-    int _appbaseItemCount=0,_appbaseGivingItem=0;
+    struct AppbaseObject { int id=0,catalogId=0,initialOwner=0; bool document=false; byte name[81]={}; Common::Array<byte> bytes; Common::Array<unsigned> entries; };
+    Common::Array<AppbaseObject> _appbaseObjects;
+    Common::String _appbaseObjectIdentity;
+    int _appbaseOriginalObjects=0,_appbaseGivingItem=0;
+    void appbaseObjectsConfigure();
     void appbaseItemsReset();
     int appbaseItem(int operation,int id,int value=0) override;
     const byte *appbaseItemName(int id) override;
+    const byte *appbaseObjectResource(int id) const override;
+    void appbaseObjectsSave(Common::WriteStream &out) const override;
+    bool appbaseObjectsAcceptSave(Common::SeekableReadStream &in) const override;
+    bool appbaseObjectLocal(uint var) const;
+    void o2_extensionService();
     int appbaseManualOwner(int owner) override;
     bool appbaseManualInput(int clickArea,int value);
-    bool appbaseWardrobeSentence(int verb,int object,int target);
     int appbaseManual(int operation) override;
     int appbaseManualRandom(int maximum,int value) override;
 #endif
