@@ -19,7 +19,8 @@ namespace Scumm {
 struct CoopEvent { int v[8]; };
 static Common::Array<CoopEvent> incoming;
 static int localActor = 0, remoteActor = 0, ticks = 0;
-static bool pendingPickup[1024] = {};
+// 0: idle, 1: waiting for canonical grant, 2: rejected (skip resumed opcode).
+static byte pendingPickup[1024] = {};
 static bool refreshPlant = false, refreshArcade = false;
 static int arcadeReplay = -1;
 static int selectionInputSlot = -1;
@@ -328,18 +329,22 @@ int ScummEngine::appbaseCoopSelect(int actor) {
 	}
 	return localActor; // only the authenticated server grants the new controller
 }
-bool ScummEngine::appbaseCoopPickup(int obj) {
-    if (!localActor) return false;
-    if(sceneStage==2 && localActor!=sceneActor)return false;
-    if(obj>0 && obj<1024)pendingPickup[obj]=true;
+int ScummEngine::appbaseCoopPickup(int obj) {
+    if (!localActor) return 0;
+    if(sceneStage==2 && localActor!=sceneActor)return 0;
+    if(obj<=0 || obj>=1024)return 0;
+    if(pendingPickup[obj]==2){pendingPickup[obj]=0;return -1;}
+    if(pendingPickup[obj]==1)return sceneStage==2?0:1;
+    if(whereIsObject(obj)==WIO_INVENTORY)return -1;
+    pendingPickup[obj]=1;
     const int ego=VAR(VAR_EGO);
     const bool animal=_game.id==GID_ZAK && ego>=5 && ego<=6 && _actors[ego]->_room==_currentRoom;
     // The authenticated hero stays behind during the original animal puzzle.
     // Carry the animal's original data room separately from the seat's pose.
     emit(2,obj,_game.id==GID_ZAK?_actors[localActor]->_room:_roomResource,localActor,
          animal?_currentRoom:0,animal?ego:0);
-    if(sceneStage==2)return false;
-	return true; // inventory is changed only after the sequencer accepts it
+    if(sceneStage==2)return 0;
+	return 1; // suspend this opcode until its sequenced response arrives
 }
 void ScummEngine::appbaseCoopTape(int var,int value) {
     if(_game.id!=GID_MANIAC)return;
@@ -504,6 +509,10 @@ int ScummEngine::appbaseCoopGet(int kind,int id,int field) {
 	if ((_game.id != GID_MANIAC && _game.id != GID_ZAK) || _game.version != 2) return -1;
     // Browser callbacks may run before native setup has allocated variables.
     if(!_setupIsComplete)return 0;
+    if(kind==11){
+        if(id>0 && id<1024)return pendingPickup[id];
+        int count=0;for(byte state : pendingPickup)if(state==1)++count;return count;
+    }
     // Original Zak SWITCH availability: scripts 4/19 gate the verb with
     // global 199 and state04 of object 169; per-actor bit 1470 disables a kid.
     if(kind==10 && _game.id==GID_ZAK)return _setupIsComplete && appbaseInitialFramePresented() && _numActors>1 && _scummVars && _currentRoom>0 && _roomResource>0 && _currentRoom!=50 && !isScriptRunning(7) && appbaseTextCanSave()?1:0;
@@ -611,6 +620,11 @@ bool ScummEngine::appbaseCoopTick() {
 	applying=true;
 	for(uint i=0;i<incoming.size();++i) {
 		const int *v=incoming[i].v;
+        if(v[0]==36 && v[1]>0 && v[1]<1024 && pendingPickup[v[1]]==1) {
+            // Ownership and exact canonical state were queued before this ack.
+            // Rejected requests also release the original script without retrying.
+            pendingPickup[v[1]]=v[3]==v[5]?0:2;
+        }
         if(v[0]==15 && v[1]>=(_game.id==GID_ZAK?7:8) && v[1]<_numActors && v[2]>=0 && v[2]<(_game.id==GID_ZAK?256:54)){
             Actor *actor=_actors[v[1]];actor->stopActorMoving();
             if(actor->_costume!=v[7])actor->setActorCostume(v[7]);
@@ -723,7 +737,6 @@ bool ScummEngine::appbaseCoopTick() {
 			int obj=v[1];
 			if(v[0] == 2 && (v[3] == localActor || v[3] == remoteActor || appbasePartyActor(v[3]) ||
                 (_game.id==GID_ZAK && (v[3]==5 || v[3]==6)))) {
-                if(obj<1024)pendingPickup[obj]=false;
 				bool present=false;
 				for(int j=0;j<_numInventory;++j)if(_inventory[j] == obj)present=true;
 				// For old bundles verify the object exists before using the normal importer.
@@ -803,7 +816,7 @@ bool ScummEngine::appbaseCoopTick() {
 			emit(1,localActor,a->_room,a->getRealPos().x,a->getRealPos().y,a->getFacing(),a->_frame,a->_costume);
 		lastRoom=a->_room; lastMoving=a->_moving;
 	}
-	if(frozen){clearClickedStatus();_keyPressed.reset();_mouseAndKeyboardStat=0;}
+	if(frozen || (sceneStage==0 && appbaseCoopGet(11,0,0)>0)){clearClickedStatus();_keyPressed.reset();_mouseAndKeyboardStat=0;}
 	return frozen;
 }
 const char *ScummEngine::appbaseCoopName(int id) {
@@ -816,7 +829,7 @@ const char *ScummEngine::appbaseCoopName(int id) {
 void appbaseCoopObserverSync(Common::Serializer &s) {
     for(int *v : {&localActor,&remoteActor,&ticks,&arcadeReplay,&selectionInputSlot,&sceneStage,&sceneScript,&sceneActor,&lastRoom,&lastMoving,&conflictStage,&chatLength,&chatDeliveryStatus,&pendingSkipScript,&pendingSkipTicks,&peerRole,&peerFrame,&peerAck,&peerFailed,&peerMusic,&peerTextSpeed,&peerLeadLimit,&partyMenuQueued,&partyMenuPending,&partyMenuAge,&partyHoverX,&partyHoverY,&peerKeyFlags})s.syncAsSint32LE(*v);
     for(bool *v : {&refreshPlant,&refreshArcade,&sceneReleased,&applying,&frozen,&predicting,&mansionEntrySent,&fridgeHungerSent,&preparatoryFrozen,&pendingIntroStart,&introAutoHold,&peerInFrame,&partyMenuLocked,&partyMenuLocalAllowed})s.syncAsByte(*v);
-    for(bool &v : pendingPickup)s.syncAsByte(v);
+    for(byte &v : pendingPickup)s.syncAsByte(v);
     for(bool &v : lightKnown)s.syncAsByte(v);
     for(int &v : roomLight)s.syncAsSint32LE(v);
     for(CoopEvent *event : {&remoteMove,&peerEnd,&peerInput})for(int &v : event->v)s.syncAsSint32LE(v);
@@ -879,6 +892,7 @@ EMSCRIPTEN_KEEPALIVE int scumm_item_owner(int id,int owner) { return !g_scumm?0:
 EMSCRIPTEN_KEEPALIVE int scumm_item_wear(int id,int worn) { return g_scumm?g_scumm->appbaseItem(9,id,worn):0; }
 EMSCRIPTEN_KEEPALIVE int scumm_item_id(int index) { return g_scumm?g_scumm->appbaseItem(5,index):0; }
 EMSCRIPTEN_KEEPALIVE int mm_coop_version() { return 8; }
+EMSCRIPTEN_KEEPALIVE int scumm_pickup_order_version() { return 1; }
 EMSCRIPTEN_KEEPALIVE int scumm_game_id() { return !g_scumm?0:(g_scumm->_game.id==GID_MANIAC?1:(g_scumm->_game.id==GID_ZAK?2:0)); }
 EMSCRIPTEN_KEEPALIVE int mm_coop_prepare(int operation) { if(!g_scumm && operation==1){preparatoryFrozen=true;return 1;}return g_scumm?g_scumm->appbaseCoopPrepare(operation):0; }
 EMSCRIPTEN_KEEPALIVE void mm_coop_seed(unsigned int seed) { if(g_scumm) g_scumm->appbaseCoopSeed(seed); }
@@ -916,10 +930,12 @@ EMSCRIPTEN_KEEPALIVE int mm_coop_enable(int actor,int peer) {
 }
 EMSCRIPTEN_KEEPALIVE void mm_coop_freeze(int value) { frozen=value!=0;if(!localActor)preparatoryFrozen=value!=0; }
 EMSCRIPTEN_KEEPALIVE int mm_coop_receive(int kind,int id,int room,int a,int b,int c,int d,int e) {
+    if(kind==36 && (id<=0 || id>=1024 || room<0 || room>255 || a<0 || a>15 || b<0 || b>15 ||
+        (c!=localActor && !(g_scumm && g_scumm->_game.id==GID_ZAK && (c==5 || c==6))) || d || e))return 0;
     if(kind==21 && (id!=10001 || room!=0 || a<1 || a>7 || b || c || d || e))return 0;
 	if(g_scumm && g_scumm->_game.id==GID_ZAK && (kind==10 || kind==11 || kind==21 ||
         (kind==15 && id!=7 && id!=12) || (kind==16 && id!=96)))return 0;
-	if(!localActor || incoming.size()>=256 || ((kind<1 || kind>4) && kind!=7 && kind!=8 && kind!=9 && kind!=10 && kind!=11 && kind!=14 && kind!=15 && kind!=16 && kind!=21)) return 0;
+	if(!localActor || incoming.size()>=256 || ((kind<1 || kind>4) && kind!=7 && kind!=8 && kind!=9 && kind!=10 && kind!=11 && kind!=14 && kind!=15 && kind!=16 && kind!=21 && kind!=36)) return 0;
 	CoopEvent event={{kind,id,room,a,b,c,d,e}};incoming.push_back(event);return 1;
 }
 }

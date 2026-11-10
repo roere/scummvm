@@ -628,7 +628,7 @@ public:
 	bool appbaseCoopVerb(int verb) const;
 	int appbaseCoopPrepare(int operation);
 	void appbaseCoopSeed(uint32 seed);
-	bool appbaseCoopPickup(int obj);
+	int appbaseCoopPickup(int obj);
 	void appbaseCoopState(int obj,int state);
 	void appbaseCoopTape(int var,int value);
 	bool appbaseCoopWalk(int actor,int room,int x,int y,int dir);

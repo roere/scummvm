@@ -1639,6 +1639,9 @@ void ScummEngine_v2::o2_chainScript() {
 }
 
 void ScummEngine_v2::o2_pickupObject() {
+#ifdef __EMSCRIPTEN__
+	const byte *pickupOpcode = _scriptPointer - 1;
+#endif
 	int obj = getVarOrDirectWord(PARAM_1);
 
 	if (obj < 1) {
@@ -1648,13 +1651,23 @@ void ScummEngine_v2::o2_pickupObject() {
 	if (getObjectIndex(obj) == -1)
 		return;
 
+#ifdef __EMSCRIPTEN__
+	const int pickup = appbaseCoopPickup(obj);
+	if (pickup) {
+		// Resume this opcode after the canonical grant. Following original
+		// opcodes must see the completed pickup, including its state bits.
+		if (pickup > 0) {
+			_scriptPointer = pickupOpcode;
+			o5_breakHere();
+		}
+		return;
+	}
+#endif
+
 	// Don't take an object twice
 	if (whereIsObject(obj) == WIO_INVENTORY)
 		return;
 
-#ifdef __EMSCRIPTEN__
-	if (appbaseCoopPickup(obj)) return;
-#endif
 	addObjectToInventory(obj, _roomResource);
 	markObjectRectAsDirty(obj);
 	putOwner(obj, VAR(VAR_EGO));

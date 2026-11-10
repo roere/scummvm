@@ -143,6 +143,7 @@ void appbasePresentationTick() {
 extern "C" EMSCRIPTEN_KEEPALIVE int mm_bridge_version() { return 1; }
 extern "C" EMSCRIPTEN_KEEPALIVE int mm_can_save() {
     return g_engine && !g_engine->isPaused() && !g_gui.isActive() &&
+        (!g_scumm || g_scumm->appbaseCoopGet(11,0,0)==0) &&
         appbaseOperationStatus != 1 && g_engine->canSaveGameStateCurrently();
 }
 extern "C" EMSCRIPTEN_KEEPALIVE int mm_request_save() {
@@ -156,7 +157,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE int mm_request_save() {
 extern "C" EMSCRIPTEN_KEEPALIVE int mm_can_coop_save() {
     return g_scumm && g_scumm->_game.id==GID_ZAK && g_scumm->_game.version==2 &&
         !g_engine->isPaused() && !g_gui.isActive() && appbaseOperationStatus!=1 &&
-        g_scumm->appbaseCoopGet(10,0,0)==1;
+        g_scumm->appbaseCoopGet(10,0,0)==1 && g_scumm->appbaseCoopGet(11,0,0)==0;
 }
 extern "C" EMSCRIPTEN_KEEPALIVE int mm_request_coop_save() {
     if(!mm_can_coop_save())return 0;
