@@ -632,8 +632,9 @@ public:
 	int appbaseCoopPickup(int obj);
 	void appbaseCoopState(int obj,int state);
 	void appbaseCoopTape(int var,int value);
+	void appbaseCoopPrint();
 	bool appbaseCoopWalk(int actor,int room,int x,int y,int dir);
-	bool appbaseCoopTransfer(int object,int owner);
+	int appbaseCoopTransfer(int object,int owner);
 	int appbaseCoopLight(int flags);
 	bool appbasePeerTick(int &delta);
 	int appbasePeerWait(int quarterFrames) const;

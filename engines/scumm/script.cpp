@@ -497,6 +497,14 @@ void ScummEngine::refreshScriptPointer() {
 
 /** Execute a script - Read opcode, and execute it from the table */
 void ScummEngine::executeScript() {
+#ifdef __EMSCRIPTEN__
+    extern bool appbaseCoopRunsOriginalScript(int script);
+    if(_currentScript!=0xFF && vm.slot[_currentScript].where==WIO_GLOBAL && !appbaseCoopRunsOriginalScript(vm.slot[_currentScript].number)) {
+        updateScriptPtr();
+        _currentScript=0xFF;
+        return;
+    }
+#endif
 	int c;
 	while (_currentScript != 0xFF) {
 

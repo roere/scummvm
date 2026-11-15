@@ -459,6 +459,7 @@ void ScummEngine_v2::decodeParseString() {
 
 	#ifdef __EMSCRIPTEN__
 	appbaseTalk(buffer, appbaseKey);
+	appbaseCoopPrint();
 	#else
 	actorTalk(buffer);
 	#endif
@@ -638,6 +639,9 @@ void ScummEngine_v2::o2_setBitVar() {
 		_scummVars[bit_var] |= (1 << bit_offset);
 	else
 		_scummVars[bit_var] &= ~(1 << bit_offset);
+#ifdef __EMSCRIPTEN__
+	appbaseCoopTape(bit_var, _scummVars[bit_var]);
+#endif
 
 }
 
@@ -1508,13 +1512,23 @@ void ScummEngine_v2::o2_loadRoomWithEgo() {
 }
 
 void ScummEngine_v2::o2_setOwnerOf() {
+#ifdef __EMSCRIPTEN__
+	const byte *ownerOpcode = _scriptPointer - 1;
+#endif
 	int obj, owner;
 
 	obj = getVarOrDirectWord(PARAM_1);
 	owner = getVarOrDirectByte(PARAM_2);
 
 #ifdef __EMSCRIPTEN__
-	if (appbaseCoopTransfer(obj,owner)) return;
+	const int transfer = appbaseCoopTransfer(obj,owner);
+	if (transfer) {
+		if (transfer == 2) {
+			_scriptPointer = ownerOpcode;
+			o5_breakHere();
+		}
+		return;
+	}
 #endif
 	setOwnerOf(obj, owner);
 }
