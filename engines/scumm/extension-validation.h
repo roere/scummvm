@@ -86,7 +86,7 @@ inline bool validateExtensionV2(const unsigned char *p, size_t size, const Exten
   case 0x72:arg(128,false,Room);break;
   case 0x68:result();arg(128,false,Script);break;
   case 0x03:case 0x83:result();arg(128,false,Actor);break;
-  case 0x27:case 0x67:arg(128,true,Object);break;
+  case 0x07:case 0x47:case 0x27:case 0x67:arg(128,true,Object);break;
   case 0x6b:if(byte()!=1)bad("unsupported object host service");arg(0,true,Object);break;
   case 0x10:case 0x90:case 0x6c:case 0xec:result();arg(128,true,Object);break;
   case 0x71:case 0xf1:result();arg(128,false,Actor);break;

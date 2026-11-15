@@ -106,9 +106,9 @@ void AppbaseExtensions::configure(ScummEngine &vm, const Common::String &path) {
 		error("Extensions require a separate target named <gameid>-ext-<manifest-md5>");
 	Common::String json((const char *)raw.data(), raw.size());
 	Common::JSONValue *manifest = Common::JSON::parse(json.c_str());
-	if (!manifest || !manifest->isObject() || (number(manifest, "schemaVersion") != 1 && number(manifest, "schemaVersion") != 2 && number(manifest, "schemaVersion") != 3 && number(manifest, "schemaVersion") != 4 && number(manifest, "schemaVersion") != 5 && number(manifest, "schemaVersion") != 6) || !token(text(manifest, "variant"))) error("Invalid extension manifest/version");
+	if (!manifest || !manifest->isObject() || (number(manifest, "schemaVersion") != 1 && number(manifest, "schemaVersion") != 2 && number(manifest, "schemaVersion") != 3 && number(manifest, "schemaVersion") != 4 && number(manifest, "schemaVersion") != 5 && number(manifest, "schemaVersion") != 6 && number(manifest, "schemaVersion") != 7) || !token(text(manifest, "variant"))) error("Invalid extension manifest/version");
 	const unsigned schema = number(manifest, "schemaVersion");
-	keys(manifest, schema >= 6 ? "schemaVersion,variant,game,extensions,party,wardrobeItems" : schema >= 3 ? "schemaVersion,variant,game,extensions,party" : "schemaVersion,variant,game,extensions");
+	keys(manifest, schema >= 7 ? "schemaVersion,variant,game,extensions,party,wardrobeItems,npcScripts,npcRoutes" : schema >= 6 ? "schemaVersion,variant,game,extensions,party,wardrobeItems" : schema >= 3 ? "schemaVersion,variant,game,extensions,party" : "schemaVersion,variant,game,extensions");
 	Common::JSONValue *game = manifest->child("game");
 	keys(game, "id,version,platform,indexMd5,fingerprint");
 	Common::String id = text(game, "id"), platform = text(game, "platform"), md5 = text(game, "indexMd5");
@@ -314,7 +314,7 @@ void AppbaseExtensions::configure(ScummEngine &vm, const Common::String &path) {
 			}
 		}
 	}
-    if (schema >= 6) {
+    if (schema == 6 || manifest->hasChild("wardrobeItems")) {
         const Common::JSONArray &items = array(manifest, "wardrobeItems");
         if (vm._game.id != GID_ZAK || items.empty() || items.size() > 16) error("Wardrobes require Zak V2 and a bounded item list");
         bool usedItems[33] = {}, usedCostumes[256] = {};
@@ -369,6 +369,7 @@ void AppbaseExtensions::configure(ScummEngine &vm, const Common::String &path) {
 			_scripts[scriptId] = script;
 		}
 	}
+	_npc.configure(vm, manifest);
 	delete manifest;
 	if (ConfMan.hasKey("appbase_figure_binding")) {
 		const Common::Array<byte> bytes = read(Common::Path(ConfMan.get("appbase_figure_binding")), 32768);
@@ -411,6 +412,7 @@ bool AppbaseExtensions::applyScript(ScummEngine &vm, int id) {
 }
 void AppbaseExtensions::saveIdentity(Common::WriteStream &out) const {
 	if (!_active) return;
+	_npc.save(out);
 	if (!_encounters.empty()) {
 		if (_objectRules) for (const ActionContext &c : _contexts) { out.writeUint32LE(c.action); out.writeUint32LE(c.object); }
 		out.writeUint32BE(MKTAG('A','B','E','V')); out.writeUint32LE(_objectRules ? 2 : 1); out.writeUint32LE(_encounters.size());
@@ -519,6 +521,7 @@ uint32 AppbaseExtensions::stateHash() const {
 	return hash;
 }
 bool AppbaseExtensions::readState(Common::SeekableReadStream &in, bool apply) {
+	if (!_npc.load(in, in.size() - 44 - (_encounters.empty() ? 0 : 32 + (_objectRules ? 640 : 0)), apply)) return false;
 	if (_encounters.empty()) return true;
 	const int64 pos = in.pos();
 	if (in.size() < 76) return false;
@@ -590,7 +593,8 @@ void AppbaseExtensions::objectChanged(ScummEngine &vm, unsigned object, unsigned
 		commitEncounter(i);
 	}
 }
-void AppbaseExtensions::tick(ScummEngine &vm) {
+void AppbaseExtensions::tick(ScummEngine &vm, unsigned delta) {
+	_npc.tick(vm, delta);
 	if (_encounters.empty() || !vm._setupIsComplete || !vm._currentRoom || vm._saveLoadFlag || vm._userPut <= 0 || vm.vm.cutSceneStackPointer || vm._haveMsg) return;
 	++_requestClock;
 	if (!_activeEncounter) {
@@ -618,9 +622,10 @@ void AppbaseExtensions::tick(ScummEngine &vm) {
 	vm._actorToPrintStrFor = line.actor; vm.actorTalk(reinterpret_cast<const byte *>(line.text.c_str()));
 }
 unsigned ScummEngine::appbaseExtensionScale(unsigned actor) const { return _appbaseExtensions.scale(actor); }
-void ScummEngine::appbaseExtensionTick() { _appbaseExtensions.tick(*this); }
+void ScummEngine::appbaseExtensionTick(int delta) { _appbaseExtensions.tick(*this, delta > 0 ? delta : 0); }
 int ScummEngine::appbaseCommitEncounter(unsigned index) { return _appbaseExtensions.commitEncounter(index); }
 int AppbaseExtensions::info(int kind, int id) const {
+	if (kind >= 20 && kind <= 26) return _npc.info(kind - 20, id);
 	if (kind == 12) return _encounters.size();
 	if (kind == 13) return id >= 0 && (uint)id < _encounters.size() ? (!(_fired & (1u << id)) ? 0 : _pending & (1u << id) ? 1 : _activeEncounter == (uint)id + 1 ? 2 : 3) : -1;
 	if (kind == 14) return _activeEncounter == (uint)id + 1 ? _nextLine : 0;
@@ -663,7 +668,7 @@ int ScummEngine::appbaseExtensionsInfo(int kind, int id) const {
 	return _appbaseExtensions.info(kind, id);
 }
 #ifdef __EMSCRIPTEN__
-extern "C" EMSCRIPTEN_KEEPALIVE int scumm_extensions_version() { return 6; }
+extern "C" EMSCRIPTEN_KEEPALIVE int scumm_extensions_version() { return 7; }
 extern "C" EMSCRIPTEN_KEEPALIVE int scumm_extensions_info(int kind, int id) { return g_scumm ? g_scumm->appbaseExtensionsInfo(kind, id) : -1; }
 extern "C" EMSCRIPTEN_KEEPALIVE int scumm_extensions_commit_encounter(int id) { return g_scumm && id >= 0 ? g_scumm->appbaseCommitEncounter(id) : -1; }
 extern "C" EMSCRIPTEN_KEEPALIVE const byte *scumm_extensions_cached_script(int id) { return g_scumm ? g_scumm->appbaseCachedScript(id) : nullptr; }

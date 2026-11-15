@@ -520,6 +520,7 @@ extern const char *const insaneKeymapId;
  */
 class ScummEngine : public Engine, public Common::Serializable {
 	friend class AppbaseExtensions;
+	friend class AppbaseNpc;
 	friend class ScummDebugger;
 	friend class CharsetRenderer;
 	friend class CharsetRendererClassic;
@@ -535,7 +536,7 @@ public:
 	int appbaseExtensionsInfo(int kind, int id) const;
 	bool appbaseExtensionRoomAllowed(int actor, int room);
 	unsigned appbaseExtensionScale(unsigned actor) const;
-	void appbaseExtensionTick();
+	void appbaseExtensionTick(int delta);
 	int appbaseCommitEncounter(unsigned index);
 #ifdef __EMSCRIPTEN__
 	bool appbaseRequestEncounter(unsigned index, unsigned room, unsigned actor, unsigned other, bool send);

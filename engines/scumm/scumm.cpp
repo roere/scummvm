@@ -3040,7 +3040,7 @@ load_game:
 		drawDirtyScreenParts();
 	} else {
 		walkActors();
-		appbaseExtensionTick();
+		appbaseExtensionTick(delta);
 		moveCamera();
 		updateObjectStates();
 		if (_game.version > 3)

@@ -5,6 +5,7 @@
 #include "common/hashmap.h"
 #include "common/str.h"
 #include "common/stream.h"
+#include "scumm/appbase-npc.h"
 namespace Scumm {
 class ScummEngine;
 class AppbaseExtensions {
@@ -23,9 +24,9 @@ public:
 	int partyVerbActor(int verb) const;
 	const char *roomRefusal(unsigned actor, unsigned room) const;
 	unsigned scale(unsigned actor) const;
-	void tick(ScummEngine &vm);
+	void tick(ScummEngine &vm, unsigned delta);
 	int commitEncounter(unsigned index);
-	unsigned stateTrailerSize() const { return _encounters.empty() ? 0 : 32 + (_objectRules ? 640 : 0); }
+	unsigned stateTrailerSize() const { return _npc.size() + (_encounters.empty() ? 0 : 32 + (_objectRules ? 640 : 0)); }
 	void scriptContext(ScummEngine &vm, unsigned slot, int object = 0, int verb = 0);
 	void chainContext(unsigned slot);
 	void sentenceContext(ScummEngine &vm);
@@ -39,6 +40,7 @@ public:
 	// Only callable while configure() is building the frozen configuration.
 	bool registerActor(unsigned id, unsigned capacityLimit, unsigned roomOwner);
 private:
+	AppbaseNpc _npc;
 	struct Script { Common::Array<byte> bytes; Common::String originalMd5; unsigned loads = 0; };
 	struct Costume { Common::Array<byte> bytes; unsigned loads = 0; };
 	struct InitialActor {
