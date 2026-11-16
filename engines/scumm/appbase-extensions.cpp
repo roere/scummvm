@@ -574,6 +574,7 @@ int AppbaseExtensions::commitEncounter(unsigned index) {
 	_fired |= bit; _pending |= bit; return 1;
 }
 void AppbaseExtensions::scriptContext(ScummEngine &vm, unsigned slot, int object, int verb) {
+	_npc.scriptContext(vm, slot, object, verb);
 	if (!_objectRules || slot >= 80) return;
 	ActionContext c = vm._currentScript < 80 ? _contexts[vm._currentScript] : _chain;
 	_chain = ActionContext();
@@ -596,7 +597,7 @@ void AppbaseExtensions::sentenceContext(ScummEngine &vm) {
 		_chain.action = actor | (verb << 16); _chain.object = object;
 	}
 }
-void AppbaseExtensions::chainContext(unsigned slot) { if (_objectRules && slot < 80) _chain = _contexts[slot]; }
+void AppbaseExtensions::chainContext(unsigned slot) { _npc.chainContext(slot); if (_objectRules && slot < 80) _chain = _contexts[slot]; }
 void AppbaseExtensions::objectChanged(ScummEngine &vm, unsigned object, unsigned before, unsigned after) {
 	if (!_objectRules || before == after || !vm._setupIsComplete || vm._currentScript >= 80 || vm._saveLoadFlag || vm.vm.cutSceneStackPointer) return;
 	const ActionContext &c = _contexts[vm._currentScript];

@@ -35,6 +35,7 @@ public:
 	bool readState(Common::SeekableReadStream &in, bool apply);
 	uint32 stateHash() const;
 	bool active() const { return _active; }
+	AppbaseNpc &npc() { return _npc; }
 	const Common::String &identity() const { return _identity; }
 	int info(int kind, int id) const;
 	bool isActor(unsigned id) const;

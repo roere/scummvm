@@ -739,6 +739,12 @@ void ScummEngine_v2::o2_waitForMessage() {
 }
 
 void ScummEngine_v2::o2_waitForSentence() {
+	if (_appbaseExtensions.npc().active(*this)) {
+		if (_appbaseExtensions.npc().waitingForSentence(*this)) {
+			_scriptPointer--; o5_breakHere();
+		}
+		return;
+	}
 	if (!_sentenceNum && !isScriptInUse(SENTENCE_SCRIPT))
 		return;
 
@@ -970,6 +976,14 @@ void ScummEngine_v2::o2_doSentence() {
 	SentenceTab *st;
 
 	a = getVarOrDirectByte(PARAM_1);
+	if (_appbaseExtensions.npc().active(*this)) {
+		if (a == 0xFC || a == 0xFB) return;
+		const unsigned object = getVarOrDirectWord(PARAM_2);
+		const unsigned other = getVarOrDirectWord(PARAM_3);
+		const unsigned mode = fetchScriptByte();
+		_appbaseExtensions.npc().sentence(*this, a, object, other, mode);
+		return;
+	}
 	if (a == 0xFC) {
 		_sentenceNum = 0;
 		stopScript(SENTENCE_SCRIPT);

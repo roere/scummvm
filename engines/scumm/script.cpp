@@ -65,6 +65,7 @@ void ScummEngine::runScript(int script, bool freezeResistant, bool recursive, in
  	if (!script)
 		return;
 
+	if (_appbaseExtensions.npc().active(*this)) recursive = true;
 	if (!recursive)
 		stopScript(script);
 
@@ -121,20 +122,21 @@ void ScummEngine::runObjectScript(int object, int entry, bool freezeResistant, b
 	if (!recursive && (_game.version >= 3))
 		stopObjectScript(object);
 
-	where = whereIsObject(object);
+	const bool npcCode = _appbaseExtensions.npc().objectCode(*this, object, entry, obcd, offs);
+	where = npcCode ? WIO_ROOM : whereIsObject(object);
 
 	if (where == WIO_NOT_FOUND) {
 		warning("Code for object %d not in room %d", object, _roomResource);
 		return;
 	}
 
-	obcd = getOBCDOffs(object);
+	if (!npcCode) obcd = getOBCDOffs(object);
 
 	// Find a free object slot, unless one was specified
 	if (slot == -1)
 		slot = getScriptSlot();
 
-	offs = getVerbEntrypoint(object, entry);
+	if (!npcCode) offs = getVerbEntrypoint(object, entry);
 	if (offs == 0)
 		return;
 
@@ -338,8 +340,10 @@ int ScummEngine::getScriptSlot() {
 
 	for (i = 1; i < NUM_SCRIPT_SLOT; i++) {
 		s = &vm.slot[i];
-		if (s->status == ssDead)
+		if (s->status == ssDead) {
+			_appbaseExtensions.npc().clearSlot(i);
 			return i;
+		}
 	}
 	error("Too many scripts running, %d max", NUM_SCRIPT_SLOT);
 	return -1;
@@ -438,6 +442,11 @@ void ScummEngine::getScriptBaseAddress() {
 
 	case WIO_LOCAL:
 	case WIO_ROOM:								/* room script */
+		if (unsigned room = _appbaseExtensions.npc().scriptRoom(*this, _currentScript)) {
+			_scriptOrgPointer = getResourceAddress(rtRoom, room);
+			_lastCodePtr = &_res->_types[rtRoom][room]._address;
+			break;
+		}
 		if (_game.version == 8) {
 			_scriptOrgPointer = getResourceAddress(rtRoomScripts, _roomResource);
 			assert(_roomResource < (int)_res->_types[rtRoomScripts].size());
@@ -497,6 +506,7 @@ void ScummEngine::refreshScriptPointer() {
 
 /** Execute a script - Read opcode, and execute it from the table */
 void ScummEngine::executeScript() {
+	AppbaseNpc::ScriptScope npcScope(_appbaseExtensions.npc(), *this);
 #ifdef __EMSCRIPTEN__
     extern bool appbaseCoopRunsOriginalScript(int script);
     if(_currentScript!=0xFF && vm.slot[_currentScript].where==WIO_GLOBAL && !appbaseCoopRunsOriginalScript(vm.slot[_currentScript].number)) {
@@ -506,7 +516,11 @@ void ScummEngine::executeScript() {
     }
 #endif
 	int c;
+	unsigned npcBudget = 0;
 	while (_currentScript != 0xFF) {
+		if (_appbaseExtensions.npc().active(*this) && ++npcBudget > 1024) {
+			updateScriptPtr(); _currentScript = 0xFF; break;
+		}
 
 		if (_showStack == 1) {
 			debugN("Stack:");
@@ -530,7 +544,7 @@ void ScummEngine::executeScript() {
 			debugN("\n");
 		}
 
-		executeOpcode(_opcode);
+		if (_appbaseExtensions.npc().beforeOpcode(*this, _opcode)) executeOpcode(_opcode);
 
 	}
 }
@@ -863,7 +877,10 @@ void ScummEngine::stopObjectCode() {
 
 	assert(_currentScript != 0xFF);
 	ss = &vm.slot[_currentScript];
-	if (_game.version <= 2) {
+	if (_game.version <= 2 && _appbaseExtensions.npc().owns(*this, _currentScript)) {
+		ss->number = 0;
+		ss->status = ssDead;
+	} else if (_game.version <= 2) {
 		if (ss->where == WIO_GLOBAL || ss->where == WIO_LOCAL) {
 			stopScript(ss->number);
 		} else {
@@ -1074,6 +1091,7 @@ void ScummEngine::killScriptsAndResources() {
 
 	ss = vm.slot;
 	for (i = 0; i < NUM_SCRIPT_SLOT; i++, ss++) {
+		if (_appbaseExtensions.npc().owns(*this, i)) continue;
 		if (ss->where == WIO_ROOM || ss->where == WIO_FLOBJECT) {
 			if (ss->cutsceneOverride) {
 				if (_game.version >= 5)
