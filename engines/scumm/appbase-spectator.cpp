@@ -26,6 +26,16 @@ static int cameraMode = 0, cameraActor = 0, cameraRoom = 0, cameraX = 160, camer
 static int cameraDrawnRoom = 0, cameraDrawnX = 160, cameraDrawnWidth = 320;
 static bool cameraLightKnown[256] = {};
 static int cameraLights[256] = {};
+static uint32 cameraWorldFrame = 0;
+struct CameraAnimation {
+    CostumeData costume;
+    Common::Point position;
+    uint32 tick = 0;
+    int room = 0, resource = 0, facing = 0, frame = 0, progress = 0;
+    bool walking = false;
+};
+static Common::Array<CameraAnimation> cameraAnimations;
+static int cameraDrawnAnimation = 0, cameraDrawnFacing = 0, cameraDrawnWalking = 0;
 static void cameraLightSync(Common::Serializer &s) {
     for (bool &known : cameraLightKnown) s.syncAsByte(known);
     for (int &flags : cameraLights) s.syncAsSint32LE(flags);
@@ -69,6 +79,7 @@ void ScummEngine::appbaseSpectatorIdle() {
             }
             if (cameraSnapshot) {
                 cameraLightSync(s);
+                s.syncAsUint32LE(cameraWorldFrame);
                 EM_ASM({ Module.scummCameraSnapshot?.(HEAPU8.slice($0, $0+$1), HEAPU8.slice($2, $2+$3)); }, save.getData(), (int)save.size(), context.getData(), (int)context.size());
                 cameraSnapshot = false;
             }
@@ -90,15 +101,51 @@ void ScummEngine::appbaseCameraRender() {
         memset(gfxUsageBits, 0, sizeof(gfxUsageBits));
         if (VAR_CURRENT_LIGHTS != 0xff) VAR(VAR_CURRENT_LIGHTS) = cameraLightKnown[room] ? cameraLights[room] : 11;
     }
+    cameraAnimations.resize(_numActors);
     for (int i = 1; i < _numActors; ++i) {
         Actor *a = _actors[i];const bool visible = a->_room == room && a->_costume > 0;
         if (visible && !a->_visible) {
+            // Offscreen V2 actors have no running costume decoder. Retain only
+            // their visual state across snapshot loads, advancing it by live VM
+            // frames rather than by viewer refreshes (which also occur paused).
+            CameraAnimation &pose = cameraAnimations[i];
+            const bool same = pose.room == room && pose.resource == a->_costume;
+            const Common::Point position = a->getRealPos();
+            const bool elapsed = same && cameraWorldFrame != pose.tick;
+            const int dx = position.x - pose.position.x, dy = position.y - pose.position.y;
+            const bool walking = same ? (elapsed ? (dx || dy || a->_moving) : pose.walking) : a->_moving != 0;
             ensureResourceLoaded(rtCostume, a->_costume);
-            const int frame = a->_frame;
-            a->_cost.reset();a->startAnimActor(a->_initFrame);a->startAnimActor(frame > 0 ? frame : a->_standFrame);
+            if (same) {
+                a->setDirection(pose.facing);
+                a->setAnimSpeed(a->getAnimSpeed());
+                for (int progress = 0; progress < pose.progress; ++progress) a->animateCostume();
+                a->_cost = pose.costume;a->_frame = pose.frame;
+            } else {
+                const int frame = a->_frame;
+                a->_cost.reset();a->startAnimActor(a->_initFrame);
+                a->startAnimActor(walking ? a->_walkFrame : (frame > 0 ? frame : a->_standFrame));
+            }
+            if (elapsed && (dx || dy)) a->setDirection(ABS(dx) >= ABS(dy) ? (dx > 0 ? 90 : 270) : (dy > 0 ? 180 : 0));
+            if (same && walking != pose.walking) a->startAnimActor(walking ? a->_walkFrame : a->_standFrame);
+            if (same) for (unsigned tick = 0, count = MIN<uint32>(cameraWorldFrame - pose.tick, 120); tick < count; ++tick) a->animateCostume();
+            pose.costume = a->_cost;pose.position = position;pose.tick = cameraWorldFrame;
+            pose.room = room;pose.resource = a->_costume;pose.facing = a->getFacing();
+            pose.frame = a->_frame;pose.progress = a->getAnimProgress();pose.walking = walking;
+        } else if (visible) {
+            // A source-visible actor already carries its exact native cel.
+            // Seed the cache for a subsequent offscreen leg without restarting.
+            CameraAnimation &pose = cameraAnimations[i];
+            pose.costume = a->_cost;pose.position = a->getRealPos();pose.tick = cameraWorldFrame;
+            pose.room = room;pose.resource = a->_costume;pose.facing = a->getFacing();
+            pose.frame = a->_frame;pose.progress = a->getAnimProgress();pose.walking = a->_moving != 0;
         }
         a->_visible = visible;a->_needRedraw = visible;a->_needBgReset = visible;
     }
+    // Read-only diagnostics describe the cel that will actually be drawn.
+    uint32 animation = 2166136261u;
+    for (uint16 cel : target->_cost.curpos) animation = (animation ^ cel) * 16777619u;
+    cameraDrawnAnimation = animation & 0x7fffffff;
+    cameraDrawnFacing = target->getFacing();cameraDrawnWalking = cameraAnimations[cameraActor].walking;
     camera._mode = kNormalCameraMode;
     camera._cur.x = MAX(_screenWidth / 2, MIN(cameraMode == 2 ? int(target->getPos().x) : cameraX, _roomWidth - _screenWidth / 2)) & ~7;
     camera._dest = camera._cur;cameraMoved();
@@ -129,6 +176,8 @@ bool ScummEngine::appbaseSpectatorBegin(int &delta) {
     return false;
 }
 void ScummEngine::appbaseSpectatorInput() {
+    // Called only after the peer/co-op hold checks, once per live world frame.
+    if (observerRole != 3) ++cameraWorldFrame;
     if (!observerInside) return;
     if (observerRole == 1) {
         EM_ASM({ Module.scummSpectatorInput?.([$0,$1,$2,$3,$4,$5,$6]); }, _mouse.x,_mouse.y,_leftBtnPressed,_rightBtnPressed,_keyPressed.keycode,_keyPressed.ascii,_keyPressed.flags);
@@ -170,7 +219,7 @@ void ScummEngine::appbaseSpectatorLoaded() {
     if (!file.open(Common::FSNode(Common::Path("/appbase-spectator/context.bin")))) { observerFailure=4;return; }
     if(file.size()<8||file.size()>1048576||file.readUint32BE()!=MKTAG('A','B','S','P')||file.readUint32LE()!=1){observerFailure=4;return;}
     Common::Serializer s(&file,nullptr);appbaseSpectatorContext(s);
-    if (observerRole == 3) {cameraLightSync(s);cameraDirty = true;}
+    if (observerRole == 3) {cameraLightSync(s);s.syncAsUint32LE(cameraWorldFrame);cameraDirty = true;}
     if(file.err()||file.pos()!=file.size())observerFailure=4;
     observerFrame=EM_ASM_INT({return Module.scummSpectatorBaseFrame||0;});
     observerInside=false;observerReset=false;
@@ -186,7 +235,7 @@ EMSCRIPTEN_KEEPALIVE int scumm_camera_view(int mode,int actor,int room,int x){
 }
 EMSCRIPTEN_KEEPALIVE int scumm_camera_get(int field){
     if(observerRole!=3||!g_scumm)return -1;
-    return field==0?cameraSequence:field==1?cameraDrawnRoom:field==2?cameraDrawnX:field==3?cameraDrawnWidth:field==4?cameraActor:cameraMode;
+    return field==0?cameraSequence:field==1?cameraDrawnRoom:field==2?cameraDrawnX:field==3?cameraDrawnWidth:field==4?cameraActor:field==5?cameraMode:field==6?cameraDrawnAnimation:field==7?cameraWorldFrame:field==8?cameraDrawnWalking:field==9?cameraDrawnFacing:-1;
 }
 EMSCRIPTEN_KEEPALIVE int scumm_spectator_version(){return 1;}
 EMSCRIPTEN_KEEPALIVE int scumm_spectator_mode(int role){

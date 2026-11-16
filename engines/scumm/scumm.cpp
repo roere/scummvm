@@ -3539,11 +3539,11 @@ void ScummEngine_v3::scummLoop_handleSaveLoad() {
 		bool restoreSounds = true;
 
 #ifdef __EMSCRIPTEN__
-        // A cooperative Zak checkpoint already contains the exact original VM
+        // Cooperative and observer checkpoints contain the exact original VM
         // context. The normal v1/v2 restore workaround enters save room 50,
         // executes its scripts and restarts room timers. Doing that after the
         // reserved load acknowledgement silently advances each peer differently.
-        if((_game.id==GID_ZAK || _game.id==GID_MANIAC) && _game.version==2 && appbasePeerPreservesContext()) {
+        if((_game.id==GID_ZAK || _game.id==GID_MANIAC) && _game.version==2 && (appbasePeerPreservesContext() || appbaseSpectatorReplay())) {
             redrawVerbs();
             _musicEngine->restoreAfterLoad();
             return;
