@@ -597,6 +597,7 @@ public:
 	int appbaseSpectatorValue(int kind,int id,int value) const;
 	void appbaseSpectatorContext(Common::Serializer &s);
 	void appbaseSpectatorLoaded();
+	void appbaseCameraRender();
 	bool appbaseGerman() const;
     virtual int appbaseItem(int operation,int id,int value=0) { return 0; }
     virtual const byte *appbaseObjectResource(int id) const { return nullptr; }
