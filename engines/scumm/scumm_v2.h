@@ -175,6 +175,7 @@ protected:
 	void o2_ifStateUnlocked();
 	void o2_ifStateIntrinsicOff();
 	void o2_isGreater();
+	uint16 appbaseManiacGiveComparison(byte variable, uint16 value, uint16 limit) const;
 	void o2_isGreaterEqual();
 	void o2_isLess();
 	void o2_isLessEqual();

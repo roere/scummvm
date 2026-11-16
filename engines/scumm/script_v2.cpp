@@ -1407,21 +1407,44 @@ void ScummEngine_v2::o2_getActorY() {
 	setResult(getObjY(actorToObj(a)));
 }
 
+uint16 ScummEngine_v2::appbaseManiacGiveComparison(byte variable, uint16 value, uint16 limit) const {
+	if (_game.id != GID_MANIAC || _game.version != 2 || !_appbaseExtensions.partyActor(value))
+		return value;
+	// Original Give scripts use <8 for playable recipients. Preserve the real
+	// actor ID everywhere else, including setOwner and item-specific side effects.
+	if (variable == VAR_ACTIVE_OBJECT2 && VAR(VAR_ACTIVE_VERB) == 3 && _opcode == 0x78 && limit == 8)
+		return 7;
+	if (_currentScript != 0xff && vm.slot[_currentScript].where == WIO_GLOBAL && limit == 25) {
+		// The input and sentence scripts also impose the original actor ceiling.
+		if (vm.slot[_currentScript].number == 2 && variable == VAR_ACTIVE_OBJECT2 && VAR(VAR_ACTIVE_VERB) == 3 && _opcode == 0x04)
+			return 7;
+		if (vm.slot[_currentScript].number == 4 && variable == VAR_CLICK_OBJECT && VAR(VAR_SENTENCE_VERB) == 3 && _opcode == 0x44)
+			return 7;
+	}
+	return value;
+}
+
 void ScummEngine_v2::o2_isGreater() {
-	uint16 a = getVar();
+	const byte variable = fetchScriptByte();
+	uint16 a = readVar(variable);
 	uint16 b = getVarOrDirectWord(PARAM_1);
+	a = appbaseManiacGiveComparison(variable, a, b);
 	jumpRelative(b > a);
 }
 
 void ScummEngine_v2::o2_isGreaterEqual() {
-	uint16 a = getVar();
+	const byte variable = fetchScriptByte();
+	uint16 a = readVar(variable);
 	uint16 b = getVarOrDirectWord(PARAM_1);
+	a = appbaseManiacGiveComparison(variable, a, b);
 	jumpRelative(b >= a);
 }
 
 void ScummEngine_v2::o2_isLess() {
-	uint16 a = getVar();
+	const byte variable = fetchScriptByte();
+	uint16 a = readVar(variable);
 	uint16 b = getVarOrDirectWord(PARAM_1);
+	a = appbaseManiacGiveComparison(variable, a, b);
 
 	jumpRelative(b < a);
 }
