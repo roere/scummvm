@@ -76,7 +76,8 @@ void ScummEngine::appbaseSpectatorIdle() {
     }
 }
 void ScummEngine::appbaseCameraRender() {
-    if (observerRole != 3 || !cameraDirty || !_setupIsComplete || cameraActor < 1 || cameraActor >= _numActors || !appbasePartyActor(cameraActor)) return;
+    if (observerRole != 3 || !cameraDirty || !_setupIsComplete || cameraActor < 1 || cameraActor >= _numActors ||
+        (!appbasePartyActor(cameraActor) && _appbaseExtensions.info(2, cameraActor) != 1)) return;
     Actor *target = _actors[cameraActor];
     const int room = cameraMode == 2 ? target->_room : cameraRoom;
     if (room < 1 || (_game.id == GID_MANIAC && room >= 54)) return;
@@ -179,7 +180,8 @@ extern "C" {
 EMSCRIPTEN_KEEPALIVE int scumm_camera_version(){return 1;}
 EMSCRIPTEN_KEEPALIVE int scumm_camera_snapshot(){if(observerRole==2||observerRole==3||!g_scumm)return 0;cameraSnapshot=true;return 1;}
 EMSCRIPTEN_KEEPALIVE int scumm_camera_view(int mode,int actor,int room,int x){
-    if(observerRole!=3||!g_scumm||mode<1||mode>2||actor<1||actor>=g_scumm->appbaseCoopGet(0,0,3)||!g_scumm->appbasePartyActor(actor)||room<1||room>255||x<0||x>8192)return 0;
+    if(observerRole!=3||!g_scumm||mode<1||mode>2||actor<1||actor>=g_scumm->appbaseCoopGet(0,0,3)||
+       (!g_scumm->appbasePartyActor(actor)&&g_scumm->appbaseExtensionsInfo(2,actor)!=1)||room<1||room>255||x<0||x>8192)return 0;
     cameraMode=mode;cameraActor=actor;cameraRoom=room;cameraX=x;cameraDirty=true;return 1;
 }
 EMSCRIPTEN_KEEPALIVE int scumm_camera_get(int field){
