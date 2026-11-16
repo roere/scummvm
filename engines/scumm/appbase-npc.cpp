@@ -23,11 +23,12 @@ uint32 hashState(const AppbaseCode::State &s,uint32 hash){
 }
 void AppbaseNpc::configure(ScummEngine &vm,Common::JSONValue *manifest){
     if(!manifest->hasChild("npcScripts"))return;
-    if(num(manifest,"schemaVersion")<7||vm._game.id!=GID_ZAK)error("NPC scripts require Zak schema 7");
+    if(num(manifest,"schemaVersion")<7||(vm._game.id!=GID_ZAK&&vm._game.id!=GID_MANIAC))error("NPC scripts require a supported V2 game and schema 7");
+    const unsigned originalActors=vm._game.id==GID_MANIAC?25:13;
     for(Common::JSONValue *item:list(manifest,"npcScripts")){
         if(_programs.size()>=8)error("Too many NPC programs");
         Program p;p.actor=num(item,"actor",94);
-        if(!vm._appbaseExtensions.isActor(p.actor)||p.actor<13||vm._appbaseExtensions.partyActor(p.actor))error("NPC script may only own an added non-playable actor");
+        if(!vm._appbaseExtensions.isActor(p.actor)||p.actor<originalActors||vm._appbaseExtensions.partyActor(p.actor))error("NPC script may only own an added non-playable actor");
         for(const Program &other:_programs)if(other.actor==p.actor)error("Conflicting NPC behavior");
         const auto &code=list(item,"code");if(code.empty()||code.size()>1536)error("Invalid NPC program size");
         for(Common::JSONValue *entry:code){
@@ -53,6 +54,15 @@ void AppbaseNpc::configure(ScummEngine &vm,Common::JSONValue *manifest){
     for(Common::JSONValue *entry:list(manifest,"npcRoutes")){
         if(_edges.size()>=1024)error("Too many NPC routes");
         AppbaseCode::Edge e;e.from=num(entry,"from",255);e.to=num(entry,"to",255);e.exit=num(entry,"exit",65535);e.entry=num(entry,"entry",65535);e.x=num(entry,"x",32767);e.y=num(entry,"y",32767);e.gate=num(entry,"gate",65535);e.script=num(entry,"script",255);_edges.push_back(e);
+    }
+    if(vm._game.id==GID_MANIAC){
+        // The original door handlers are the authority for this first MM
+        // route. Do not infer passages through halls from room numbers.
+        if(_edges.size()!=2)error("Invalid Maniac NPC routes");
+        for(unsigned n=0;n<2;++n){
+            const AppbaseCode::Edge &e=_edges[n];
+            if(e.from!=(n?5u:3u)||e.to!=(n?3u:5u)||e.exit!=(n?135u:126u)||e.entry!=(n?126u:135u)||e.gate!=e.exit||e.x||e.y||e.script)error("Invalid Maniac NPC door passage");
+        }
     }
     // Read original room coordinates without loading the room into the scene,
     // running entry scripts, moving EGO, or changing the player's camera.
@@ -143,6 +153,7 @@ struct AppbaseNpc::Adapter {
 };
 void AppbaseNpc::tick(ScummEngine &vm,unsigned delta){
     if(!delta||_programs.empty()||!vm._setupIsComplete||!vm._currentRoom||vm._saveLoadFlag||vm.vm.cutSceneStackPointer||vm._userPut<=0)return;
+    if(vm._game.id==GID_MANIAC&&vm._currentRoom==45)return;
     unsigned ms=(delta*1000+30)/60;
     for(Program &p:_programs){
         const unsigned before=p.state.status;Adapter adapter{*this,vm,p,false};
