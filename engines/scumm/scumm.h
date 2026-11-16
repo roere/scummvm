@@ -647,6 +647,7 @@ public:
 	int appbasePeerSound(int sound,int value);
 	bool appbaseCoopTick();
 	int appbaseCoopGet(int kind,int id,int field);
+	int appbaseManiacPartySelect(int actor);
 	const char *appbaseCoopName(int id);
 #endif
 	// Constructor / Destructor

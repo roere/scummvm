@@ -631,7 +631,7 @@ void ScummEngine_v2::o2_setBitVar() {
 	int var = fetchScriptWord();
 	byte a = getVarOrDirectByte(PARAM_1);
 
-	int bit_var = var + a;
+	int bit_var = _appbaseExtensions.maniacActorBit(var, a);
 	int bit_offset = bit_var & 0x0f;
 	bit_var >>= 4;
 
@@ -650,7 +650,7 @@ void ScummEngine_v2::o2_getBitVar() {
 	int var = fetchScriptWord();
 	byte a = getVarOrDirectByte(PARAM_1);
 
-	int bit_var = var + a;
+	int bit_var = _appbaseExtensions.maniacActorBit(var, a);
 	int bit_offset = bit_var & 0x0f;
 	bit_var >>= 4;
 

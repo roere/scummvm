@@ -1397,6 +1397,15 @@ void ScummEngine_v5::o5_getClosestObjActor() {
 		}
 	} while (--obj >= VAR(VAR_ACTOR_RANGE_MIN));
 
+	// Original MM scripts search the seven kids. Include only registered
+	// playable additions, preserving the original range and tie preference.
+	if (_game.id == GID_MANIAC && _game.version == 2) {
+		for (obj = _numActors - 1; obj >= 25; --obj) {
+			if (obj == act || !_appbaseExtensions.partyActor(obj)) continue;
+			dist = getObjActToObjActDist(act, obj);
+			if (dist < closest_dist) { closest_dist = dist; closest_obj = obj; }
+		}
+	}
 	setResult(closest_obj);
 }
 

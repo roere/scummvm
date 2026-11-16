@@ -289,6 +289,49 @@ bool ScummEngine::appbasePartyActorAvailable(int id) {
 }
 bool ScummEngine::appbaseCoopActive() const { return localActor != 0; }
 int ScummEngine::appbaseCoopActor() const { return localActor; }
+int ScummEngine::appbaseManiacPartySelect(int actor) {
+    // Additional figures have independent byte-sized inventory owners. Keep
+    // Dave and the two original selected kids, including their menu variables.
+    if (_game.id != GID_MANIAC || _game.version != 2 || !_setupIsComplete ||
+        localActor || peerRole || isPaused() || _appbaseExtensions.info(11, 0) == 0 ||
+        _currentRoom <= 0 || _currentRoom == 45 || _userPut <= 0 ||
+        vm.cutSceneStackPointer || !appbaseTextCanSave()) return 0;
+    bool selected = false, dave = false;
+    for (int i = 47; i <= 49; ++i) {
+        const int kid = _scummVars[i];
+        if (kid < 1 || kid > 7) return 0;
+        for (int j = 47; j < i; ++j) if (_scummVars[j] == kid) return 0;
+        selected |= actor == kid;
+        dave |= kid == 3;
+    }
+    if (!dave) return 0;
+    const int previous = VAR(VAR_EGO);
+    if (previous <= 0 || previous >= _numActors || _actors[previous]->_room != _currentRoom) return 0;
+    const unsigned held = _appbaseExtensions.maniacActorBit(2952, previous);
+    if (_scummVars[held >> 4] & (1 << (held & 15))) return 0;
+    if (actor == -1) return 1; // Read-only availability query for the host UI.
+    if ((!selected && !_appbaseExtensions.partyActor(actor)) || actor <= 0 ||
+        actor >= _numActors || _actors[actor]->_room <= 0 || _actors[actor]->_costume <= 0) return 0;
+    const unsigned targetHeld = _appbaseExtensions.maniacActorBit(2952, actor);
+    if (_scummVars[targetHeld >> 4] & (1 << (targetHeld & 15))) return 0;
+    if (previous == actor) return 1;
+    _actors[previous]->stopActorMoving();
+    _sentenceNum = 0;
+    stopScript(2); // Enhanced V2's original sentence script.
+    VAR(VAR_EGO) = actor;
+    actorFollowCamera(actor);
+    runScript(164, 0, 0, nullptr); // Restore original action verbs after New kid.
+    runInventoryScript(1);
+    // A placed figure can first appear in a room without using its entry
+    // door. Start the same original guards used for ordinary room arrivals;
+    // let their original pursuit and capture scripts decide what happens.
+    if (_actors[10]->_room == _currentRoom && !isScriptRunning(36) && !isScriptRunning(153))
+        runScript(_currentRoom == 7 ? 153 : 36, 0, 0, nullptr);
+    if (_actors[11]->_room == _currentRoom && !isScriptRunning(91) && !isScriptRunning(88) && !isScriptRunning(89))
+        runScript(91, 0, 0, nullptr);
+    _fullRedraw = true;
+    return 1;
+}
 int ScummEngine::appbaseCoopPrepare(int operation) {
 	if((_game.id!=GID_MANIAC && _game.id!=GID_ZAK) || _game.version!=2) return 0;
 	if(operation==0 || operation==1) { preparatoryFrozen=operation==1;frozen=operation==1;return 1; }
@@ -961,6 +1004,9 @@ EMSCRIPTEN_KEEPALIVE int scumm_item_wear(int id,int worn) { return g_scumm?g_scu
 EMSCRIPTEN_KEEPALIVE int scumm_item_id(int index) { return g_scumm?g_scumm->appbaseItem(5,index):0; }
 EMSCRIPTEN_KEEPALIVE int mm_coop_version() { return 8; }
 EMSCRIPTEN_KEEPALIVE int scumm_pickup_order_version() { return 3; }
+EMSCRIPTEN_KEEPALIVE int scumm_maniac_party_version() { return 1; }
+EMSCRIPTEN_KEEPALIVE int scumm_maniac_party_select(int actor) { return g_scumm && actor > 0 ? g_scumm->appbaseManiacPartySelect(actor) : 0; }
+EMSCRIPTEN_KEEPALIVE int scumm_maniac_party_ready() { return g_scumm ? g_scumm->appbaseManiacPartySelect(-1) : 0; }
 EMSCRIPTEN_KEEPALIVE int scumm_game_id() { return !g_scumm?0:(g_scumm->_game.id==GID_MANIAC?1:(g_scumm->_game.id==GID_ZAK?2:0)); }
 EMSCRIPTEN_KEEPALIVE int mm_coop_prepare(int operation) { if(!g_scumm && operation==1){preparatoryFrozen=true;return 1;}return g_scumm?g_scumm->appbaseCoopPrepare(operation):0; }
 EMSCRIPTEN_KEEPALIVE void mm_coop_seed(unsigned int seed) { if(g_scumm) g_scumm->appbaseCoopSeed(seed); }

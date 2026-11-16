@@ -231,7 +231,10 @@ void AppbaseExtensions::configure(ScummEngine &vm, const Common::String &path) {
 		if (manifest->hasChild("party")) {
 			Common::JSONValue *party = manifest->child("party"); keys(party, "actors,selectionVerbs");
 			for (Common::JSONValue *actor : array(party, "actors")) {
-				if (!actor->isIntegerNumber() || actor->asIntegerNumber() < _originalActors || actor->asIntegerNumber() >= vm.OF_OWNER_ROOM - 1) error("Playable extension actor must fit original V2 inventory ownership");
+				if (!actor->isIntegerNumber() || actor->asIntegerNumber() < _originalActors ||
+                    actor->asIntegerNumber() >= _capacity ||
+                    (vm._game.id != GID_MANIAC && actor->asIntegerNumber() >= vm.OF_OWNER_ROOM - 1))
+                    error("Playable extension actor must fit registered inventory ownership");
 				unsigned id = actor->asIntegerNumber();
 				if (!isActor(id) || partyActor(id)) error("Unregistered or duplicate party actor");
 				bool initialized = false; for (const InitialActor &a : _initialActors) if (a.id == id) initialized = true;
@@ -316,7 +319,7 @@ void AppbaseExtensions::configure(ScummEngine &vm, const Common::String &path) {
 	}
     if (schema == 6 || manifest->hasChild("wardrobeItems")) {
         const Common::JSONArray &items = array(manifest, "wardrobeItems");
-        if (vm._game.id != GID_ZAK || items.empty() || items.size() > 16) error("Wardrobes require Zak V2 and a bounded item list");
+        if ((vm._game.id != GID_ZAK && vm._game.id != GID_MANIAC) || items.empty() || items.size() > 16) error("Wardrobes require a supported V2 game and a bounded item list");
         bool usedItems[33] = {}, usedCostumes[256] = {};
         for (Common::JSONValue *item : items) {
             keys(item, "id,key,kind,names,initialOwner,wearer,baseCostume,costume,image");
@@ -393,6 +396,7 @@ void AppbaseExtensions::configure(ScummEngine &vm, const Common::String &path) {
 	}
 	_active = true;
 	vm._numActors = _capacity;
+	if (vm._game.id == GID_MANIAC && !_partyActors.empty()) _maniacBitBase = vm._numVariables;
 	restoreResourceDirectory(vm);
 	vm._res->allocResTypeData(rtActorName, 0, _capacity, kDynamicResTypeMode);
 	for (Common::HashMap<int, Script>::const_iterator it = _scripts.begin(); it != _scripts.end(); ++it) vm._res->nukeResource(rtScript, it->_key);
@@ -443,6 +447,16 @@ bool AppbaseExtensions::loadCostume(ScummEngine &vm, int id) {
 	return true;
 }
 void AppbaseExtensions::restoreResourceDirectory(ScummEngine &vm) {
+	// Enhanced MM packs five per-kid bit sets into original story variables.
+	// Extra IDs must never index those sets directly: actor 25 would overwrite
+	// another original flag. Reserve 22 serialized VM words for IDs 25..94.
+	if (_maniacBitBase && (unsigned)vm._numVariables == _maniacBitBase) {
+		int32 *vars = (int32 *)calloc(_maniacBitBase + 22, sizeof(int32));
+		if (!vars) error("Unable to allocate extension actor state");
+		memcpy(vars, vm._scummVars, _maniacBitBase * sizeof(int32));
+		free(vm._scummVars); vm._scummVars = vars;
+		vm._numVariables = _maniacBitBase + 22;
+	}
 	if (!_active || _costumes.empty()) return;
 	if ((unsigned)vm._numCostumes != _originalCostumes) error("Original costume directory changed");
 	unsigned capacity = _originalCostumes;
@@ -501,6 +515,12 @@ int AppbaseExtensions::partyVerbActor(int verb) const {
 bool AppbaseExtensions::partyActor(unsigned id) const {
 	for (unsigned actor : _partyActors) if (actor == id) return true;
 	return false;
+}
+unsigned AppbaseExtensions::maniacActorBit(unsigned base, unsigned actor) const {
+	if (_maniacBitBase && actor >= 25 && actor < 95 && partyActor(actor) &&
+	    base >= 2936 && base <= 2968 && (base - 2936) % 8 == 0)
+		return _maniacBitBase * 16 + (actor - 25) * 5 + (base - 2936) / 8;
+	return base + actor;
 }
 const char *AppbaseExtensions::roomRefusal(unsigned actor, unsigned room) const {
 	for (const ActorPolicy &policy : _policies) if (policy.id == actor) {

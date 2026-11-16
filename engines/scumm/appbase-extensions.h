@@ -10,7 +10,7 @@ namespace Scumm {
 class ScummEngine;
 class AppbaseExtensions {
 public:
-	AppbaseExtensions() : _active(false), _originalActors(0), _capacity(0) {}
+	AppbaseExtensions() : _active(false), _originalActors(0), _capacity(0), _maniacBitBase(0) {}
 	void configure(ScummEngine &vm, const Common::String &path);
 	bool applyScript(ScummEngine &vm, int id);
 	bool loadCostume(ScummEngine &vm, int id);
@@ -21,6 +21,7 @@ public:
 	bool acceptsSave(Common::SeekableReadStream &in) const;
 	void saveIdentity(Common::WriteStream &out) const;
 	bool partyActor(unsigned id) const;
+	unsigned maniacActorBit(unsigned base, unsigned actor) const;
 	int partyVerbActor(int verb) const;
 	const char *roomRefusal(unsigned actor, unsigned room) const;
 	unsigned scale(unsigned actor) const;
@@ -65,6 +66,7 @@ private:
 	unsigned _originalCostumes = 0;
 	bool _active;
 	unsigned _originalActors, _capacity;
+	unsigned _maniacBitBase;
 	Common::String _identity, _saveIdentity;
 	struct FigureState { unsigned actor, base; Common::Array<unsigned> costumes; };
 	Common::Array<FigureState> _figureStates;
