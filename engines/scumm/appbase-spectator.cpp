@@ -16,6 +16,7 @@
 
 namespace Scumm {
 void appbaseCoopObserverSync(Common::Serializer &s);
+bool appbaseCoopRoomLight(int room, int &flags);
 void appbaseTextObserverSync(Common::Serializer &s);
 static int observerRole = 0, observerFrame = 0, observerFailure = 0;
 static bool observerInside = false, observerCheckpoint = false, observerReset = false;
@@ -115,6 +116,13 @@ void ScummEngine::appbaseCameraLights() {
             if (_actors[i]->_room > 0 && _actors[i]->_room < 54) needed[_actors[i]->_room] = true;
         for (int room = 1; room < 54; ++room) {
             if (room == _currentRoom || (!needed[room] && !cameraLightKnown[room])) continue;
+            int sharedLights = 0;
+            if (appbaseCoopRoomLight(room, sharedLights)) {
+                // The other player's VM owns this room's actual illumination.
+                // Its switch bits need not exist in this independent VM.
+                cameraLightKnown[room] = true;cameraLights[room] = sharedLights;
+                continue;
+            }
             if (!cameraLightPolicy[room]) {
                 ensureResourceLoaded(rtRoom, room);
                 const byte *data = getResourceAddress(rtRoom, room);

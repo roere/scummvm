@@ -597,6 +597,10 @@ int ScummEngine::appbaseCoopSceneCommand(int operation,int script,int offset,int
         }return 1;}
     return 0;
 }
+bool appbaseCoopRoomLight(int room, int &flags) {
+    if (!localActor || room <= 0 || room >= 256 || !lightKnown[room]) return false;
+    flags = roomLight[room];return true;
+}
 int ScummEngine::appbaseCoopLight(int flags) {
 	if (!localActor || applying || sceneStage!=0 || _currentRoom<=0 || _currentRoom>=(_game.id==GID_ZAK?256:54)) return flags;
 	Actor *a=_actors[localActor];
