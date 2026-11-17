@@ -302,6 +302,11 @@ public:
 		return _animSpeed;
 	}
 
+#ifdef __EMSCRIPTEN__
+	// Visual transport only: no initActor(), movement, scripts or resource reset.
+	void appbaseCameraSync(Common::Serializer &s);
+#endif
+
 	int getAnimProgress() const {
 		return _animProgress;
 	}

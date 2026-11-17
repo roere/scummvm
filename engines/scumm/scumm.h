@@ -598,6 +598,10 @@ public:
 	void appbaseSpectatorContext(Common::Serializer &s);
 	void appbaseSpectatorLoaded();
 	void appbaseCameraRender();
+    bool appbaseCameraObserver() const;
+    void appbaseCameraPublish();
+    void appbaseCameraState(Common::Serializer &s);
+    bool appbaseCameraReceive(Common::SeekableReadStream &in);
 	bool appbaseGerman() const;
     virtual int appbaseItem(int operation,int id,int value=0) { return 0; }
     virtual const byte *appbaseObjectResource(int id) const { return nullptr; }

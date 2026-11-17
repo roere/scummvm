@@ -2444,7 +2444,12 @@ void ScummEngine::processActors() {
 				a->drawActorCostume();
 			} else {
 				a->drawActorCostume();
-				a->animateCostume();
+#ifdef __EMSCRIPTEN__
+                // A camera imports native cels or advances its offscreen visual
+                // decoder by source ticks. Drawing must not advance it again.
+                if (!appbaseCameraObserver())
+#endif
+				    a->animateCostume();
 
 				if (_game.heversion >= 80) {
 					if (VAR_ALWAYS_REDRAW_ACTORS != 0xFF && VAR(VAR_ALWAYS_REDRAW_ACTORS) != 0)
@@ -2880,6 +2885,38 @@ void Actor::animateActor(int anim) {
 			startAnimActor(anim);
 	}
 }
+
+#ifdef __EMSCRIPTEN__
+void Actor::appbaseCameraSync(Common::Serializer &s) {
+    const int oldRoom = _room, oldCostume = _costume;
+    s.syncAsSint16LE(_pos.x);s.syncAsSint16LE(_pos.y);
+    s.syncAsByte(_room);s.syncAsUint16LE(_costume);
+    s.syncAsByte(_visible);s.syncAsByte(_moving);
+    s.syncAsUint16LE(_width);s.syncAsSint16LE(_elevation);
+    s.syncAsUint16LE(_boxscale);s.syncAsByte(_scalex);s.syncAsByte(_scaley);
+    s.syncAsByte(_forceClip);s.syncAsByte(_ignoreBoxes);s.syncAsByte(_walkbox);
+    s.syncAsByte(_flip);s.syncAsByte(_shadowMode);s.syncAsSint32LE(_layer);
+    s.syncAsByte(_initFrame);s.syncAsByte(_walkFrame);s.syncAsByte(_standFrame);
+    s.syncAsByte(_talkStartFrame);s.syncAsByte(_talkStopFrame);
+    s.syncArray(_palette, 256, Common::Serializer::Uint16LE);
+    // Source-visible cels are exact, taken immediately before native drawing.
+    // An offscreen actor retains its viewer decoder instead of restarting it.
+    CostumeData costume = _cost;
+    uint16 facing = _facing;byte frame = _frame, speed = _animSpeed, progress = _animProgress;
+    s.syncAsUint16LE(facing);s.syncAsByte(frame);s.syncAsByte(speed);s.syncAsByte(progress);
+    s.syncAsUint16LE(costume.animCounter);s.syncAsByte(costume.soundCounter);
+    s.syncAsByte(costume.soundPos);s.syncAsUint16LE(costume.stopped);
+    s.syncBytes(costume.animType, 16);
+    s.syncArray(costume.curpos, 16, Common::Serializer::Uint16LE);
+    s.syncArray(costume.start, 16, Common::Serializer::Uint16LE);
+    s.syncArray(costume.end, 16, Common::Serializer::Uint16LE);
+    s.syncArray(costume.frame, 16, Common::Serializer::Uint16LE);
+    if (s.isLoading() && (_visible || oldRoom != _room || oldCostume != _costume)) {
+        _cost = costume;_facing = facing;_frame = frame;_animProgress = progress;
+    } else if (s.isLoading()) setDirection(facing);
+    if (s.isLoading()) _animSpeed = speed;
+}
+#endif
 
 void Actor::animateCostume() {
 	if (_costume == 0)

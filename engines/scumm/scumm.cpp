@@ -3048,6 +3048,9 @@ load_game:
 
 		scummLoop_handleDrawing();
 
+#ifdef __EMSCRIPTEN__
+        appbaseCameraPublish();
+#endif
 		scummLoop_handleActors();
 
 		_fullRedraw = false;
