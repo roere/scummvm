@@ -2900,6 +2900,7 @@ void ScummEngine::scummLoop(int delta) {
 	if (_game.version != 7 || isFTDOSDemo) {
 #ifdef __EMSCRIPTEN__
         appbasePeerBeforeInput();
+        appbaseCameraSpeechTick(delta);
         appbaseSpectatorInput();
 #endif
 		processInput();

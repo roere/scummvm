@@ -8,6 +8,7 @@
 #include "common/serializer.h"
 #include "gui/gui-manager.h"
 #include "scumm/actor.h"
+#include "scumm/charset.h"
 #include "scumm/resource.h"
 #include "scumm/gfx.h"
 #include "scumm/scumm.h"
@@ -31,6 +32,66 @@ static bool cameraStreaming = false, cameraForcePublish = false;
 static int cameraSourceRoom = 0, cameraTalking = 0;
 static int cameraStageTop = 0, cameraStageHeight = 0;
 static byte cameraInbox[262144];
+// Transient presentation state, deliberately outside the game save format.
+struct CameraSpeech {
+    byte room=0, native=0;
+    uint32 remaining=0, sequence=0;
+    byte text[256]={};
+};
+static Common::Array<CameraSpeech> cameraSpeech;
+static uint32 cameraSpeechSequence=0;
+static int cameraCaptionActor=-1;
+int ScummEngine::appbaseCameraSpeech(int actor,const byte *text,bool native,int resumeMs) {
+    if(observerRole==3||_game.version!=2||(_game.id!=GID_MANIAC&&_game.id!=GID_ZAK))return 0;
+    const int index=actor==255?0:actor;
+    if(index<0||index>=_numActors||!text)return 0;
+    cameraSpeech.resize(_numActors);CameraSpeech &line=cameraSpeech[index];
+    if(resumeMs>0&&line.remaining&&line.room==_actors[index]->_room)return line.remaining;
+    line=CameraSpeech();line.room=index?_actors[index]->_room:_currentRoom;line.native=native;line.sequence=++cameraSpeechSequence;
+    unsigned count=0;
+    for(unsigned i=0;text[i]&&i<1023&&count<sizeof(line.text)-1;++i){
+        const byte ch=text[i];
+        if(ch==255||ch==254){
+            const byte code=text[++i];if(!code)break;
+            if(code==1||code==8)line.text[count++]=' ';
+            else if(code>3)i+=2;
+        }else if(ch==13)line.text[count++]=' ';
+        else if(ch>=32&&ch!='@')line.text[count++]=ch;
+    }
+    line.remaining=resumeMs>0?MAX(1,resumeMs*60/1000):CLIP<int>(60+count*_defaultTextSpeed,120,720);
+    return line.remaining;
+}
+void ScummEngine::appbaseCameraSpeechTick(int delta){
+    if(observerRole==3)return;
+    for(unsigned i=0;i<cameraSpeech.size();++i){
+        CameraSpeech &line=cameraSpeech[i];
+        if(line.native){if(!_haveMsg||getTalkingActor()!=(i?int(i):255))line.remaining=0;}
+        else line.remaining=delta>=int(line.remaining)?0:line.remaining-delta;
+    }
+}
+void ScummEngine::appbaseCameraCaption(){
+    VirtScreen &screen=_virtscr[kTextVirtScreen];
+    if(!screen.getPixels(0,0)||screen.h<=0)return;
+    memset(screen.getPixels(0,0),0,screen.pitch*screen.h);screen.setDirtyRange(0,screen.h);
+    cameraCaptionActor=-1;uint32 latest=0;
+    for(unsigned i=0;i<cameraSpeech.size();++i){
+        const CameraSpeech &line=cameraSpeech[i];
+        if(line.remaining&&line.room==_currentRoom&&line.sequence>=latest){latest=line.sequence;cameraCaptionActor=i;}
+    }
+    if(cameraCaptionActor<0)return;
+    const CameraSpeech &line=cameraSpeech[cameraCaptionActor];
+    byte text[256];memcpy(text,line.text,sizeof(text));text[255]=0;
+    const auto saved=_string[0];
+    _string[0].xpos=0;_string[0].ypos=screen.topline-_screenTop;_string[0].right=_screenWidth-1;
+    _string[0].center=false;_string[0].color=cameraCaptionActor?_actors[cameraCaptionActor]->_talkColor:15;
+    _charset->addLinebreaks(0,text,0,_screenWidth);
+    byte wrapped[270];unsigned count=0;
+    for(unsigned i=0;text[i]&&count<sizeof(wrapped)-3;++i){
+        if(text[i]==13){wrapped[count++]=255;wrapped[count++]=1;}
+        else wrapped[count++]=text[i];
+    }
+    wrapped[count]=0;drawString(0,wrapped);_string[0]=saved;
+}
 struct CameraAnimation {
     Common::Point position;
     uint32 tick = 0;
@@ -117,7 +178,7 @@ void ScummEngine::appbaseCameraRender() {
                 const Common::Point position = a->getRealPos();
                 const int dx = position.x - pose.position.x, dy = position.y - pose.position.y;
                 const bool walking = a->_moving != 0 || (same && (dx || dy));
-                const bool talking = cameraTalking == i;
+                const bool talking = cameraTalking == i || (i<int(cameraSpeech.size())&&cameraSpeech[i].remaining);
                 if (!same) {
                     a->_cost.reset();a->startAnimActor(a->_initFrame);
                     a->startAnimActor(talking ? a->_talkStartFrame : walking ? a->_walkFrame : a->_standFrame);
@@ -145,6 +206,7 @@ void ScummEngine::appbaseCameraRender() {
     camera._dest = camera._cur;cameraMoved();
     _fullRedraw = true;_bgNeedsRedraw = true;
     updateObjectStates();scummLoop_handleDrawing();scummLoop_handleActors();
+    appbaseCameraCaption();
     _fullRedraw = false;updatePalette();drawDirtyScreenParts();camera._last = camera._cur;
     // A completion signal denotes a presented SDL/WebGL frame, not just dirty
     // backend buffers. The compositor never observes an unfinished redraw.
@@ -153,7 +215,8 @@ void ScummEngine::appbaseCameraRender() {
     cameraStageHeight = _virtscr[kMainVirtScreen].h;
     cameraDrawnRoom = _currentRoom;cameraDrawnX = camera._cur.x;cameraDrawnWidth = _roomWidth;
     cameraDirty = false;++cameraSequence;
-    EM_ASM({ Module.scummCameraPresented?.($0, $1, $2, $3, $4); }, cameraSequence, cameraStageTop, cameraStageHeight, _screenWidth, _screenHeight);
+    EM_ASM({ Module.scummCameraPresented?.($0,$1,$2,$3,$4,$5,$6,$7); }, cameraSequence,cameraStageTop,cameraStageHeight,_screenWidth,_screenHeight,cameraSourceRoom,_currentRoom,cameraCaptionActor);
+
 }
 // Compact, versioned render state. No VM variables, script slots, inventory,
 // random source, save metadata or resource teardown enter this steady path.
@@ -169,6 +232,11 @@ void ScummEngine::appbaseCameraState(Common::Serializer &s) {
     s.syncBytes(_objectOwnerTable, _numGlobalObjects);
     s.syncArray(_classData, _numGlobalObjects, Common::Serializer::Uint32LE);
     for (int i = 1; i < _numActors; ++i) _actors[i]->appbaseCameraSync(s);
+    cameraSpeech.resize(_numActors);
+    for(CameraSpeech &line:cameraSpeech){
+        s.syncAsByte(line.room);s.syncAsByte(line.native);s.syncAsUint32LE(line.remaining);s.syncAsUint32LE(line.sequence);s.syncBytes(line.text,256);
+        if(s.isLoading())line.text[255]=0;
+    }
     if (s.isLoading()) setDirtyColors(0, 255);
 }
 void ScummEngine::appbaseCameraPublish() {
@@ -177,7 +245,7 @@ void ScummEngine::appbaseCameraPublish() {
         (!cameraForcePublish && cameraPublishedFrame == cameraWorldFrame)) return;
     cameraLightKnown[_currentRoom] = true;cameraLights[_currentRoom] = getCurrentLights();
     Common::MemoryWriteStreamDynamic out(DisposeAfterUse::YES);
-    out.writeUint32BE(MKTAG('A','B','C','V'));out.writeUint16LE(1);
+    out.writeUint32BE(MKTAG('A','B','C','V'));out.writeUint16LE(2);
     out.writeUint16LE(_numActors);out.writeUint16LE(_numGlobalObjects);
     Common::Serializer s(nullptr, &out);appbaseCameraState(s);
     cameraPublishedFrame = cameraWorldFrame;cameraForcePublish = false;
@@ -185,9 +253,9 @@ void ScummEngine::appbaseCameraPublish() {
 }
 bool ScummEngine::appbaseCameraReceive(Common::SeekableReadStream &in) {
     if (in.size() < 1024 || in.size() > sizeof(cameraInbox) ||
-        in.readUint32BE() != MKTAG('A','B','C','V') || in.readUint16LE() != 1 ||
+        in.readUint32BE() != MKTAG('A','B','C','V') || in.readUint16LE() != 2 ||
         in.readUint16LE() != _numActors || in.readUint16LE() != _numGlobalObjects ||
-        in.size() != 2454 + 6 * _numGlobalObjects + 698 * (_numActors - 1)) return false;
+        in.size() != 2454 + 6 * _numGlobalObjects + 698 * (_numActors - 1) + 266 * _numActors) return false;
     Common::Serializer s(&in, nullptr);appbaseCameraState(s);
     if (in.err() || in.pos() != in.size()) return false;
     cameraDirty = true;return true;
@@ -260,6 +328,7 @@ void ScummEngine::appbaseSpectatorEnd() {
     if (!good) observerFailure=3;
 }
 void ScummEngine::appbaseSpectatorLoaded() {
+    if(observerRole!=3)cameraSpeech.clear();
     if (observerRole == 1) {
         observerReset=true;observerCheckpoint=true;observerFrame=0;
         EM_ASM({Module.scummSpectatorReset?.();});return;
@@ -289,7 +358,7 @@ EMSCRIPTEN_KEEPALIVE int scumm_camera_view(int mode,int actor,int room,int x){
 }
 EMSCRIPTEN_KEEPALIVE int scumm_camera_get(int field){
     if(observerRole!=3||!g_scumm)return -1;
-    return field==0?cameraSequence:field==1?cameraDrawnRoom:field==2?cameraDrawnX:field==3?cameraDrawnWidth:field==4?cameraActor:field==5?cameraMode:field==6?cameraDrawnAnimation:field==7?cameraWorldFrame:field==8?cameraDrawnWalking:field==9?cameraDrawnFacing:field==10?cameraStageTop:field==11?cameraStageHeight:-1;
+    return field==0?cameraSequence:field==1?cameraDrawnRoom:field==2?cameraDrawnX:field==3?cameraDrawnWidth:field==4?cameraActor:field==5?cameraMode:field==6?cameraDrawnAnimation:field==7?cameraWorldFrame:field==8?cameraDrawnWalking:field==9?cameraDrawnFacing:field==10?cameraStageTop:field==11?cameraStageHeight:field==12?cameraCaptionActor:-1;
 }
 EMSCRIPTEN_KEEPALIVE int scumm_spectator_version(){return 1;}
 EMSCRIPTEN_KEEPALIVE int scumm_spectator_mode(int role){

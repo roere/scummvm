@@ -863,7 +863,11 @@ void Actor::startWalkActor(int destX, int destY, int dir) {
 		abr = adjustXYToBeInBox(destX, destY);
 	}
 
-	if (!isInCurrentRoom() && _vm->_game.version <= 6) {
+	if (!isInCurrentRoom() && _vm->_game.version <= 6
+#ifdef __EMSCRIPTEN__
+        && !_vm->appbaseNpcWalking(_number)
+#endif
+    ) {
 		_pos.x = abr.x;
 		_pos.y = abr.y;
 		if (!_ignoreTurns && dir != -1)
@@ -2746,7 +2750,11 @@ void Actor::startAnimActor(int f) {
 
 	assert(f != 0x3E);
 
-	if (isInCurrentRoom() && _costume != 0) {
+	if ((isInCurrentRoom()
+#ifdef __EMSCRIPTEN__
+        || _vm->appbaseNpcWalking(_number)
+#endif
+    ) && _costume != 0) {
 		_animProgress = 0;
 		_needRedraw = true;
 		_cost.animCounter = 0;
@@ -2887,6 +2895,19 @@ void Actor::animateActor(int anim) {
 }
 
 #ifdef __EMSCRIPTEN__
+int Actor::appbaseNpcWalk(int x,int y,bool begin) {
+    if (!_vm->appbaseNpcWalking(_number)) return -1;
+    if (begin) {
+        _vm->ensureResourceLoaded(rtCostume, _costume);
+        _cost.reset();startAnimActor(_initFrame);startAnimActor(_standFrame);
+        adjustActorPos();
+        const AdjustBoxResult goal=adjustXYToBeInBox(x,y);
+        if(_pos.x==goal.x&&_pos.y==goal.y)return 1;
+        startWalkActor(x,y,-1);
+    }
+    walkActor();animateCostume();
+    return _moving ? 0 : _pos == _walkdata.dest ? 1 : -1;
+}
 void Actor::appbaseCameraSync(Common::Serializer &s) {
     const int oldRoom = _room, oldCostume = _costume;
     s.syncAsSint16LE(_pos.x);s.syncAsSint16LE(_pos.y);
@@ -2913,7 +2934,7 @@ void Actor::appbaseCameraSync(Common::Serializer &s) {
     s.syncArray(costume.frame, 16, Common::Serializer::Uint16LE);
     if (s.isLoading() && (_visible || oldRoom != _room || oldCostume != _costume)) {
         _cost = costume;_facing = facing;_frame = frame;_animProgress = progress;
-    } else if (s.isLoading()) setDirection(facing);
+    }
     if (s.isLoading()) _animSpeed = speed;
 }
 #endif
@@ -3523,6 +3544,9 @@ void ScummEngine::actorTalk(const byte *msg) {
 		a = derefActor(_actorToPrintStrFor, "actorTalk");
 
 		if (!a->isInCurrentRoom()) {
+#ifdef __EMSCRIPTEN__
+            appbaseCameraSpeech(_actorToPrintStrFor, _charsetBuffer, false);
+#endif
 			oldact = 0xFF;
 		} else {
 			if (!_keepText) {
@@ -3566,6 +3590,9 @@ void ScummEngine::actorTalk(const byte *msg) {
 	if (VAR_CHARCOUNT != 0xFF)
 		VAR(VAR_CHARCOUNT) = 0;
 	_haveActorSpeechMsg = true;
+#ifdef __EMSCRIPTEN__
+    appbaseCameraSpeech(_actorToPrintStrFor, _charsetBuffer, true);
+#endif
 	displayDialog();
 }
 

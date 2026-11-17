@@ -305,6 +305,7 @@ public:
 #ifdef __EMSCRIPTEN__
 	// Visual transport only: no initActor(), movement, scripts or resource reset.
 	void appbaseCameraSync(Common::Serializer &s);
+    int appbaseNpcWalk(int x,int y,bool begin);
 #endif
 
 	int getAnimProgress() const {

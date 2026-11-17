@@ -28,6 +28,8 @@ public:
     bool beforeOpcode(ScummEngine &vm,unsigned opcode);
     bool sentence(ScummEngine &vm,unsigned verb,unsigned object,unsigned other,unsigned mode);
     bool waitingForSentence(const ScummEngine &vm) const;
+    bool walking(unsigned actor) const { return _walkingActor == actor; }
+    byte *walkMatrix(unsigned index);
     struct ScriptScope {
         ScriptScope(AppbaseNpc &host,ScummEngine &vm);
         ~ScriptScope();
@@ -43,6 +45,9 @@ private:
     struct Context { uint32 program=0,object=0,verb=0,other=0,room=0,parent=0; };
     Context _contexts[80],_starting,_chain;
     bool _objectActions=false;
+    struct Navigation { Common::Array<byte> boxes, matrix; };
+    Common::HashMap<unsigned,Navigation> _navigation;
+    unsigned _walkingActor=0, _walkingRoom=0;
     Context context(const ScummEngine &vm) const;
     void reject(ScummEngine &vm);
 };

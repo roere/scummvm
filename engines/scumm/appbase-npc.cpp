@@ -75,6 +75,13 @@ void AppbaseNpc::configure(ScummEngine &vm,Common::JSONValue *manifest){
         if(resource._roomoffs==RES_INVALID_OFFSET||!Common::File::exists(vm.generateFilename(room)))continue;
         const byte *raw=vm.getResourceAddress(rtRoom,room);unsigned bytes=vm.getResourceSize(rtRoom,room);
         if(!raw||bytes<28)continue;unsigned count=raw[20];if(28+count*4>bytes)error("Invalid NPC room objects");
+        const unsigned offset=raw[21], boxes=offset<bytes?raw[offset]:0;
+        if(boxes && offset+1+boxes*8+boxes*(boxes+1)<=bytes){
+            Navigation &nav=_navigation[room];
+            for(unsigned i=0;i<1+boxes*8;++i)nav.boxes.push_back(raw[offset+i]);
+            for(unsigned i=0;i<boxes*(boxes+1);++i)nav.matrix.push_back(raw[offset+1+boxes*8+i]);
+            for(unsigned i=0;i<boxes;++i)if(unsigned(nav.matrix[i])+boxes>nav.matrix.size()-boxes)error("Invalid NPC walk matrix");
+        }
         unsigned ids[256]={};Object objects[256];
         for(unsigned n=0;n<count;++n){
             unsigned off=READ_LE_UINT16(raw+28+count*2+n*2);
@@ -84,6 +91,11 @@ void AppbaseNpc::configure(ScummEngine &vm,Common::JSONValue *manifest){
         for(unsigned n=1;n<=count;++n){Object o=objects[n];o.parent=o.parent<=count?ids[o.parent]:0;_objects[ids[n]]=o;}
     }
     for(const auto &e:_edges)if(!_objects.contains(e.exit)||!_objects.contains(e.entry)||_objects[e.exit].room!=e.from||_objects[e.entry].room!=e.to)error("NPC route doesn't match original objects");
+}
+byte *AppbaseNpc::walkMatrix(unsigned index){
+    if(!_walkingRoom||!_navigation.contains(_walkingRoom))return nullptr;
+    Navigation &nav=_navigation[_walkingRoom];
+    return index==2?nav.boxes.data():index==1?nav.matrix.data():nullptr;
 }
 bool AppbaseNpc::owns(const ScummEngine &vm,unsigned slot) const {
     return _objectActions&&slot<80&&_contexts[slot].program&&_contexts[slot].program<=_programs.size()&&vm.vm.slot[slot].status!=ssDead;
@@ -159,9 +171,10 @@ bool AppbaseNpc::beforeOpcode(ScummEngine &vm,unsigned op){
        (op&0x7f)==0x40||op==0x58||(op&0x7f)==0x22||(op&0x7f)==0x60||(op&0x7f)==0x7a){reject(vm);return false;}
     const Context c=_contexts[vm._currentScript];
     const bool offscreen=vm._actors[_programs[c.program-1].actor]->_room!=vm._currentRoom;
+    unsigned speaker=_programs[c.program-1].actor;
     bool silent=op==0xd8&&offscreen;
     if((op&0x7f)==0x14){
-        unsigned speaker=vm.fetchScriptByte();if(op&128)speaker=vm.readVar(speaker);
+        speaker=vm.fetchScriptByte();if(op&128)speaker=vm.readVar(speaker);
         silent=speaker==255?offscreen:(speaker<(unsigned)vm._numActors&&vm._actors[speaker]->_room!=vm._currentRoom);
         if(!silent)--vm._scriptPointer;
     }
@@ -169,7 +182,17 @@ bool AppbaseNpc::beforeOpcode(ScummEngine &vm,unsigned op){
         // actorTalk's offscreen early return occurs after converting into the
         // shared text buffer. Consume the original packed string here instead,
         // preserving any dialogue that is currently visible to the player.
-        for(byte ch;(ch=vm.fetchScriptByte())!=0;)if((ch&127)>3&&(ch&127)<8)vm.fetchScriptByte();
+        const Common::String key=vm.appbaseTextKey();
+        byte text[512]={},expanded[512];unsigned count=0;
+        for(byte packed;(packed=vm.fetchScriptByte())!=0;){
+            const byte ch=packed&127;const bool space=packed&128;
+            if(count+5>=sizeof(text)){reject(vm);return false;}
+            if(ch<8){text[count++]=255;text[count++]=ch;if(ch>3){text[count++]=vm.fetchScriptByte();text[count++]=0;}}
+            else text[count++]=ch;
+            if(space)text[count++]=' ';
+        }
+        text[count]=0;vm.convertMessageToString(vm.appbaseText(text,key,0),expanded,sizeof(expanded));
+        vm.appbaseCameraSpeech(speaker==255?_programs[c.program-1].actor:speaker,expanded,false);
         return false;
     }
     if(offscreen&&((op&0x7f)==0x1c||(op&0x7f)==0x3c)){vm.fetchScriptByte();return false;}
@@ -233,20 +256,22 @@ struct AppbaseNpc::Adapter {
             if(ABS(p.x-int(x))>3||ABS(p.y-int(y))>12){progress[7]=0;return AppbaseCode::Blocked;}
             return AppbaseCode::Complete;
         }
-        progress[7]=2;actor->stopActorMoving();
-        Common::Point pos=actor->getRealPos();
-        // Like walkActors(), advance once per native world frame. V2 uses
-        // 8x2-pixel coordinate units and one logical unit per axis.
-        const unsigned frames=1;
-        int dx=int(x)-pos.x,dy=int(y)-pos.y;
-        pos.x+=CLIP<int>(dx,-int(frames),int(frames));pos.y+=CLIP<int>(dy,-int(frames),int(frames));
-        actor->putActor(pos.x,pos.y,actor->_room);
-        return pos.x==int(x)&&pos.y==int(y)?AppbaseCode::Complete:AppbaseCode::Pending;
+        if(!host._navigation.contains(actor->_room))return AppbaseCode::Blocked;
+        host._walkingActor=program.actor;host._walkingRoom=actor->_room;
+        const int result=actor->appbaseNpcWalk(x,y,progress[7]!=2||!actor->_moving);
+        host._walkingActor=host._walkingRoom=0;progress[7]=2;
+        return result>0?AppbaseCode::Complete:result<0?AppbaseCode::Blocked:AppbaseCode::Pending;
     }
     AppbaseCode::Result action(const AppbaseCode::Instruction &i,uint32 *progress,uint32 ms){
         Actor *actor=vm._actors[program.actor];
         if(i.op==AppbaseCode::Say){
-            if(actor->_room!=vm._currentRoom)return AppbaseCode::Complete;
+            if(actor->_room!=vm._currentRoom){
+                byte text[512];vm.convertMessageToString((const byte *)program.text[program.state.pc].c_str(),text,sizeof(text));
+                const int duration=vm.appbaseCameraSpeech(program.actor,text,false,progress[0]?progress[1]:0);
+                if(!progress[0]){progress[1]=duration*1000/60;progress[0]=1;}
+                if(ms<progress[1]){progress[1]-=ms;return AppbaseCode::Pending;}
+                return AppbaseCode::Complete;
+            }
             if(!progress[0]){if(vm._haveMsg)return AppbaseCode::Blocked;vm._actorToPrintStrFor=program.actor;vm.actorTalk((const byte *)program.text[program.state.pc].c_str());progress[0]=1;return AppbaseCode::Pending;}
             return vm._haveMsg?AppbaseCode::Pending:AppbaseCode::Complete;
         }
@@ -302,6 +327,13 @@ struct AppbaseNpc::Adapter {
 void AppbaseNpc::tick(ScummEngine &vm,unsigned delta){
     if(!delta||_programs.empty()||!vm._setupIsComplete||!vm._currentRoom||vm._saveLoadFlag||vm.vm.cutSceneStackPointer||vm._userPut<=0)return;
     if(vm._game.id==GID_MANIAC&&vm._currentRoom==45)return;
+    if(_navigation.contains(vm._currentRoom)){
+        Navigation &nav=_navigation[vm._currentRoom];
+        const byte *boxes=vm.getResourceAddress(rtMatrix,2);
+        if(boxes&&vm.getResourceSize(rtMatrix,2)==nav.boxes.size())memcpy(nav.boxes.data(),boxes,nav.boxes.size());
+        const byte *matrix=vm.getResourceAddress(rtMatrix,1);
+        if(matrix&&vm.getResourceSize(rtMatrix,1)==nav.matrix.size())memcpy(nav.matrix.data(),matrix,nav.matrix.size());
+    }
     unsigned ms=(delta*1000+30)/60;
     for(Program &p:_programs){
         const unsigned before=p.state.status;Adapter adapter{*this,vm,p,false};

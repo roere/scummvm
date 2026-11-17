@@ -444,7 +444,11 @@ void ScummEngine::setScaleSlot(int slot, int x1, int y1, int scale1, int x2, int
 }
 
 byte ScummEngine::getNumBoxes() {
-	byte *ptr = getResourceAddress(rtMatrix, 2);
+	byte *ptr = nullptr;
+#ifdef __EMSCRIPTEN__
+    ptr = _appbaseExtensions.npc().walkMatrix(2);
+#endif
+    if (!ptr) ptr = getResourceAddress(rtMatrix, 2);
 	if (!ptr)
 		return 0;
 	if (_game.version == 8)
@@ -456,7 +460,11 @@ byte ScummEngine::getNumBoxes() {
 }
 
 Box *ScummEngine::getBoxBaseAddr(int box) {
-	byte *ptr = getResourceAddress(rtMatrix, 2);
+	byte *ptr = nullptr;
+#ifdef __EMSCRIPTEN__
+    ptr = _appbaseExtensions.npc().walkMatrix(2);
+#endif
+    if (!ptr) ptr = getResourceAddress(rtMatrix, 2);
 	if (!ptr || box == kOldInvalidBox)
 		return nullptr;
 
@@ -701,7 +709,11 @@ int getClosestPtOnBox(const BoxCoords &box, int x, int y, int16& outX, int16& ou
 }
 
 byte *ScummEngine::getBoxMatrixBaseAddr() {
-	byte *ptr = getResourceAddress(rtMatrix, 1);
+	byte *ptr = nullptr;
+#ifdef __EMSCRIPTEN__
+    ptr = _appbaseExtensions.npc().walkMatrix(1);
+#endif
+    if (!ptr) ptr = getResourceAddress(rtMatrix, 1);
 	assert(ptr);
 	if (*ptr == 0xFF)
 		ptr++;
