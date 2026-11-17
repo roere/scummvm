@@ -530,7 +530,8 @@ int ScummEngine::appbaseCoopTransfer(int object,int owner) {
     }
 	if (from==localActor && (owner==remoteActor || (appbasePartyActor(owner) && owner!=localActor &&
             ((_game.id==GID_ZAK && appbaseCoopGet(8,owner,0)==1) ||
-             (_game.id==GID_MANIAC && (owner==_scummVars[47] || owner==_scummVars[48] || owner==_scummVars[49])))))) {
+             (_game.id==GID_MANIAC && (_appbaseExtensions.partyActor(owner) ||
+                 owner==_scummVars[47] || owner==_scummVars[48] || owner==_scummVars[49])))))) {
 		Actor *a=_actors[localActor];
 		emit(1,localActor,a->_room,a->getRealPos().x,a->getRealPos().y,a->getFacing(),a->_frame,a->_costume);
 		emit(5,object,a->_room,localActor,owner);
