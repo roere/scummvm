@@ -603,6 +603,7 @@ public:
     int appbaseCameraSpeech(int actor,const byte *text,bool native,int resumeMs=0);
     void appbaseCameraSpeechTick(int delta);
     void appbaseCameraCaption();
+    void appbaseCameraLights();
     bool appbaseNpcWalking(unsigned actor) { return _appbaseExtensions.npc().walking(actor); }
     void appbaseCameraState(Common::Serializer &s);
     bool appbaseCameraReceive(Common::SeekableReadStream &in);

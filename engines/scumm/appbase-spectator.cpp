@@ -27,6 +27,8 @@ static int cameraMode = 0, cameraActor = 0, cameraRoom = 0, cameraX = 160, camer
 static int cameraDrawnRoom = 0, cameraDrawnX = 160, cameraDrawnWidth = 320;
 static bool cameraLightKnown[256] = {};
 static int cameraLights[256] = {};
+// Immutable room policy: 0 unknown, 1 other, 2 MM's shared lighting script.
+static byte cameraLightPolicy[256] = {};
 static uint32 cameraWorldFrame = 0, cameraPublishedFrame = ~0u;
 static bool cameraStreaming = false, cameraForcePublish = false;
 static int cameraSourceRoom = 0, cameraTalking = 0;
@@ -105,6 +107,44 @@ static void cameraLightSync(Common::Serializer &s) {
     for (int &flags : cameraLights) s.syncAsSint32LE(flags);
 }
 
+void ScummEngine::appbaseCameraLights() {
+    if (observerRole == 3 || !_setupIsComplete || _currentRoom <= 0) return;
+    if (_game.id == GID_MANIAC && _game.version == 2) {
+        bool needed[54] = {};
+        for (int i = 1; i < _numActors; ++i)
+            if (_actors[i]->_room > 0 && _actors[i]->_room < 54) needed[_actors[i]->_room] = true;
+        for (int room = 1; room < 54; ++room) {
+            if (room == _currentRoom || (!needed[room] && !cameraLightKnown[room])) continue;
+            if (!cameraLightPolicy[room]) {
+                ensureResourceLoaded(rtRoom, room);
+                const byte *data = getResourceAddress(rtRoom, room);
+                const uint32 size = getResourceSize(rtRoom, room);
+                cameraLightPolicy[room] = 1;
+                if (data && size >= 28) {
+                    const unsigned entry = READ_LE_UINT16(data + 26);
+                    if (entry >= 28 && entry + 2 <= size && data[entry] == 0x42 && data[entry + 1] == 55)
+                        cameraLightPolicy[room] = 2;
+                }
+            }
+            if (cameraLightPolicy[room] != 2) continue;
+            const auto bit = [&](int base) { const int n = base + room; return (_scummVars[n >> 4] & (1 << (n & 15))) != 0; };
+            // Read the authoritative switch/fuse/flashlight state used by MM
+            // script 55. No script execution, scratch-variable writes or room
+            // entry are needed. Its special-room bypass keeps native values.
+            if (bit(2872)) continue;
+            int flags = 0;
+            const int owner = _objectOwnerTable[84];
+            if (owner > 0 && owner < _numActors && _actors[owner]->_room == room && _scummVars[156] == 1)
+                flags = LIGHTMODE_flashlight_on | LIGHTMODE_actor_use_colors;
+            if (!(_objectStateTable[157] & 8) && !bit(2816))
+                flags = LIGHTMODE_actor_use_base_palette | LIGHTMODE_room_lights_on | LIGHTMODE_actor_use_colors;
+            cameraLightKnown[room] = true;cameraLights[room] = flags;
+        }
+    }
+    // The room actually being drawn always wins over inferred offscreen light.
+    cameraLightKnown[_currentRoom] = true;cameraLights[_currentRoom] = getCurrentLights();
+}
+
 bool ScummEngine::appbaseCameraObserver() const { return observerRole == 3; }
 bool ScummEngine::appbaseSpectatorReplay() const { return observerRole == 2 || observerRole == 3; }
 int ScummEngine::appbaseSpectatorWait(int original) const {
@@ -144,6 +184,7 @@ void ScummEngine::appbaseSpectatorIdle() {
                 observerCheckpoint = false;observerReset = false;
             }
             if (cameraSnapshot) {
+                appbaseCameraLights();
                 cameraLightSync(s);
                 s.syncAsUint32LE(cameraWorldFrame);
                 EM_ASM({ Module.scummCameraSnapshot?.(HEAPU8.slice($0, $0+$1), HEAPU8.slice($2, $2+$3)); }, save.getData(), (int)save.size(), context.getData(), (int)context.size());
@@ -243,7 +284,7 @@ void ScummEngine::appbaseCameraPublish() {
     if (!cameraStreaming || observerRole == 3 || !_setupIsComplete || _game.version != 2 ||
         _saveLoadFlag || _currentRoom < 1 || g_gui.isActive() ||
         (!cameraForcePublish && cameraPublishedFrame == cameraWorldFrame)) return;
-    cameraLightKnown[_currentRoom] = true;cameraLights[_currentRoom] = getCurrentLights();
+    appbaseCameraLights();
     Common::MemoryWriteStreamDynamic out(DisposeAfterUse::YES);
     out.writeUint32BE(MKTAG('A','B','C','V'));out.writeUint16LE(2);
     out.writeUint16LE(_numActors);out.writeUint16LE(_numGlobalObjects);
@@ -328,7 +369,11 @@ void ScummEngine::appbaseSpectatorEnd() {
     if (!good) observerFailure=3;
 }
 void ScummEngine::appbaseSpectatorLoaded() {
-    if(observerRole!=3)cameraSpeech.clear();
+    if(observerRole!=3){
+        cameraSpeech.clear();
+        memset(cameraLightKnown,0,sizeof(cameraLightKnown));
+        memset(cameraLights,0,sizeof(cameraLights));
+    }
     if (observerRole == 1) {
         observerReset=true;observerCheckpoint=true;observerFrame=0;
         EM_ASM({Module.scummSpectatorReset?.();});return;
